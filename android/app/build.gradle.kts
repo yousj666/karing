@@ -56,15 +56,37 @@ android {
         }
         val releaseStoreFile = prop.getProperty("storeFile.release")?.let { rootProject.file(it) }
         val hasReleaseKey = releaseStoreFile?.exists() == true
+        // yousj-plus (v1.0.8): fixed long-term release key. CI decodes the
+        // keystore from GitHub Secrets and exports YOUSJ_KEYSTORE_*; when
+        // all four are present they take precedence over key.properties, so
+        // every tag build is signed with the same key (1.0.2-1.0.7 shipped
+        // with per-run throwaway debug keys and broke overlay upgrades).
+        val envStoreFile =
+                System.getenv("YOUSJ_KEYSTORE_PATH")?.takeIf { it.isNotBlank() }?.let { file(it) }
+        val hasEnvKey =
+                envStoreFile?.exists() == true &&
+                        !System.getenv("YOUSJ_KEYSTORE_PASSWORD").isNullOrBlank() &&
+                        !System.getenv("YOUSJ_KEY_ALIAS").isNullOrBlank() &&
+                        !System.getenv("YOUSJ_KEY_PASSWORD").isNullOrBlank()
+        val anyReleaseKey = hasEnvKey || hasReleaseKey
+        val effStoreFile = if (hasEnvKey) envStoreFile else releaseStoreFile
+        val effStorePassword =
+                if (hasEnvKey) System.getenv("YOUSJ_KEYSTORE_PASSWORD")
+                else prop.getProperty("storePassword.release")
+        val effKeyAlias =
+                if (hasEnvKey) System.getenv("YOUSJ_KEY_ALIAS") else prop.getProperty("keyAlias.release")
+        val effKeyPassword =
+                if (hasEnvKey) System.getenv("YOUSJ_KEY_PASSWORD")
+                else prop.getProperty("keyPassword.release")
         named("debug") { ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64", "x86") } }
         named("profile") {
-            if (hasReleaseKey) {
+            if (anyReleaseKey) {
                 signingConfig =
                         signingConfigs.create("profile") {
-                            storeFile = rootProject.file(prop.getProperty("storeFile.release"))
-                            storePassword = prop.getProperty("storePassword.release")
-                            keyAlias = prop.getProperty("keyAlias.release")
-                            keyPassword = prop.getProperty("keyPassword.release")
+                            storeFile = effStoreFile
+                            storePassword = effStorePassword
+                            keyAlias = effKeyAlias
+                            keyPassword = effKeyPassword
                         }
             }
             ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64", "x86") }
@@ -80,16 +102,17 @@ android {
             // proguardFiles = getDefaultProguardFile('proguard-android-optimize.txt'),
             // 'proguard-rules.pro'
             signingConfig =
-                    if (hasReleaseKey) {
+                    if (anyReleaseKey) {
                         signingConfigs.create("release") {
-                            storeFile = rootProject.file(prop.getProperty("storeFile.release"))
-                            storePassword = prop.getProperty("storePassword.release")
-                            keyAlias = prop.getProperty("keyAlias.release")
-                            keyPassword = prop.getProperty("keyPassword.release")
+                            storeFile = effStoreFile
+                            storePassword = effStorePassword
+                            keyAlias = effKeyAlias
+                            keyPassword = effKeyPassword
                         }
                     } else {
-                        // No signing secrets available (fork CI): debug-signed
-                        // release build. Installable for testing only.
+                        // Local dev fallback only: CI always exports
+                        // YOUSJ_KEYSTORE_* and fails the build before this
+                        // point when it cannot, so tag builds never land here.
                         signingConfigs.getByName("debug")
                     }
             ndk {

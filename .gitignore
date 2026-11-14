@@ -98,3 +98,10 @@ android/app/src/main/assets/termux/
 # Android lets the app execute it) is likewise downloaded by CI at build
 # time (pinned frp release + SHA-256 verified); never commit it either.
 android/app/src/main/jniLibs/arm64-v8a/libfrpc.so
+
+# yousj-plus (v1.0.8): release signing material must never be committed.
+# The fixed release keystore lives outside this repo
+# (~/workspace/karing-fork/signing/, 600) and in GitHub Secrets only.
+/signing/
+*.jks
+*.keystore

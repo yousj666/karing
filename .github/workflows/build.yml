@@ -1,11 +1,14 @@
 name: Build
 
 # First installable builds of the Yousj Enhanced fork.
-# Android: no signing secrets exist in this repo (gh secret list is
-# empty), so the release APK falls back to debug signing — see the
-# release signingConfig fallback in android/app/build.gradle.kts and
-# the notice written to the run summary. Suitable for test installs
-# alongside the original app (applicationId cc.yousj.enhanced).
+# Android (v1.0.8+): release builds are signed with a fixed long-term
+# release key. The keystore lives only in GitHub Secrets
+# (YOUSJ_KEYSTORE_BASE64 / _PASSWORD / _ALIAS / _KEY_PASSWORD); the
+# workflow decodes it to the runner temp dir and Gradle picks it up via
+# YOUSJ_KEYSTORE_* (see android/app/build.gradle.kts). A post-build step
+# verifies the APK cert fingerprint, so a tag build can never silently
+# fall back to a throwaway debug key again — that fallback is what made
+# 1.0.2-1.0.7 mutually uninstallable as overlay upgrades.
 
 on:
   workflow_dispatch:
@@ -58,6 +61,29 @@ jobs:
         # exist on Linux runners and Gradle refuses to start.
         run: sed -i '/^org.gradle.java.home=/d' android/gradle.properties
 
+      - name: Decode release keystore
+        # v1.0.8: decode the fixed release keystore from GitHub Secrets
+        # into the runner temp dir (never into the checkout) and point
+        # Gradle at it via YOUSJ_KEYSTORE_PATH; the passwords/alias are
+        # handed to the build step directly from secrets. Fail hard when
+        # any secret is missing: a tag build must never drift back to a
+        # per-run debug key.
+        env:
+          YOUSJ_KEYSTORE_BASE64: ${{ secrets.YOUSJ_KEYSTORE_BASE64 }}
+          YOUSJ_KEYSTORE_PASSWORD: ${{ secrets.YOUSJ_KEYSTORE_PASSWORD }}
+          YOUSJ_KEY_ALIAS: ${{ secrets.YOUSJ_KEY_ALIAS }}
+          YOUSJ_KEY_PASSWORD: ${{ secrets.YOUSJ_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for v in YOUSJ_KEYSTORE_BASE64 YOUSJ_KEYSTORE_PASSWORD YOUSJ_KEY_ALIAS YOUSJ_KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then echo "::error::Missing required secret: $v"; exit 1; fi
+          done
+          dir="$RUNNER_TEMP/yousj-signing"
+          mkdir -p "$dir"
+          echo "$YOUSJ_KEYSTORE_BASE64" | base64 -d > "$dir/yousj-release.jks"
+          echo "YOUSJ_KEYSTORE_PATH=$dir/yousj-release.jks" >> "$GITHUB_ENV"
+          echo "Release keystore decoded to $dir/yousj-release.jks"
+
       - name: Bundle official Termux APK (pinned)
         # yousj-plus (v1.0.6): the home-grid Termux entry installs Termux
         # from a bundled asset when the user has none. This downloads the
@@ -109,13 +135,30 @@ jobs:
           ls -la "$dest"
 
       - name: Build release APK
+        env:
+          YOUSJ_KEYSTORE_PASSWORD: ${{ secrets.YOUSJ_KEYSTORE_PASSWORD }}
+          YOUSJ_KEY_ALIAS: ${{ secrets.YOUSJ_KEY_ALIAS }}
+          YOUSJ_KEY_PASSWORD: ${{ secrets.YOUSJ_KEY_PASSWORD }}
         run: flutter build apk --release --dart-define=KARING_BUILD_VERSION=${{ env.KARING_BUILD_VERSION }}
 
-      - name: Signing notice
-        if: always()
+      - name: Verify release signature
+        # Gate: every produced APK must carry the fixed release key.
+        # The expected value is the public SHA-256 fingerprint of the
+        # long-term certificate (first used in v1.0.8); it is not a secret.
         run: |
+          set -euo pipefail
+          expected="066328ac6c2e3f6199072fb3a0e9e58e81cc056d95b5e204cac6343f789139a7"
+          apksigner="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
+          for apk in build/app/outputs/flutter-apk/*.apk; do
+            digest="$("$apksigner" verify --print-certs "$apk" | grep 'SHA-256 digest' | head -1 | sed 's/.*: //' | tr -d ' :' | tr '[:upper:]' '[:lower:]')"
+            echo "$apk -> $digest"
+            if [ "$digest" != "$expected" ]; then
+              echo "::error::$apk is signed with an unexpected certificate"
+              exit 1
+            fi
+          done
           echo "## Android signing" >> "$GITHUB_STEP_SUMMARY"
-          echo "This APK is **debug-signed**: the repo has no signing secrets, so the release build type used the debug-signing fallback added in android/app/build.gradle.kts. Installable for testing; not a store build." >> "$GITHUB_STEP_SUMMARY"
+          echo "Release-signed with the fixed Yousj key (cert SHA-256: $expected)." >> "$GITHUB_STEP_SUMMARY"
           ls -la build/app/outputs/flutter-apk/ >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Upload APK
