@@ -320,6 +320,9 @@ class ServerConfigGroupItem {
   String site = '';
   bool enable = true;
 
+  /// Whether the profile may be edited in the UI (custom groups are).
+  bool editAble = false;
+
   List<ProxyConfig> servers = [];
   List<ServerUrltestItem> urltests = [];
 
@@ -385,6 +388,7 @@ class ServerConfigGroupItem {
     ret.urlOrPath = urlOrPath;
     ret.site = site;
     ret.enable = enable;
+    ret.editAble = editAble;
     if (includeServers) {
       ret.servers = servers.map((e) => e.clone()).toList();
     }
@@ -566,6 +570,10 @@ class DiversionRulesGroup {
   String name = '';
   bool or = false;
 
+  /// Position within the owning ServerDiversionGroupItem (ServerManager
+  /// sorts and re-numbers groups by it).
+  int index = 0;
+
   /// Sub-groups for logical nesting.
   List<DiversionRulesGroup> groups = [];
 
@@ -601,6 +609,7 @@ class DiversionRulesGroup {
     ret.groupid = groupid;
     ret.name = name;
     ret.or = or;
+    ret.index = index;
     ret.groups = groups.map((e) => e.clone()).toList();
     ret.proxies = List<String>.from(proxies);
     ret.ruleSetBuildIn = List<String>.from(ruleSetBuildIn);
@@ -629,6 +638,7 @@ class DiversionRulesGroup {
     'groupid': groupid,
     'name': name,
     'or': or,
+    'index': index,
     'groups': groups.map((e) => e.toJson()).toList(),
     'proxies': proxies,
     'rule_set_build_in': ruleSetBuildIn,
@@ -657,6 +667,7 @@ class DiversionRulesGroup {
     groupid = _asString(map['groupid']);
     name = _asString(map['name']);
     or = _asBool(map['or']);
+    index = _asInt(map['index']);
     groups = [];
     final gs = map['groups'];
     if (gs is List) {
