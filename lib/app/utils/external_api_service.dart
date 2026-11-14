@@ -30,6 +30,7 @@ import 'package:karing/app/utils/app_utils.dart';
 import 'package:karing/app/utils/auto_conf_utils.dart';
 import 'package:karing/app/utils/http_utils.dart';
 import 'package:karing/app/utils/log.dart';
+import 'package:karing/app/utils/termux_bridge.dart';
 import 'package:uuid/uuid.dart';
 // Note: profile/state types (RemoteContent, ProxyFilter, ProxyStrategy,
 // SubscriptionLinkType, ServerConfigGroupItem, FlutterVpnServiceState) are
@@ -43,6 +44,17 @@ class ExternalApiService {
 
   static HttpServer? _server;
   static bool _boundLan = false;
+
+  // Termux exec serialisation: exactly one command runs at a time. A
+  // second exec request while one is in flight is rejected with 429
+  // rather than queued — the caller (an AI) can simply retry, and no
+  // unbounded queue of shell commands can pile up.
+  static bool _termuxBusy = false;
+
+  static const int kTermuxMaxCommandLength = 4000;
+  static const int kTermuxDefaultTimeoutSeconds = 30;
+  static const int kTermuxMaxTimeoutSeconds = 120;
+  static const int kTermuxMaxOutputBytes = 64 * 1024;
 
   // Last start failure (e.g. port already in use), for the settings UI.
   // Never contains the token.
@@ -178,6 +190,21 @@ class ExternalApiService {
     return _sendJson(request, statusCode, {'ok': false, 'error': error});
   }
 
+  // Like _fail but also carries a machine-readable error code, so AI
+  // callers can react differently to e.g. PERMISSION_DENIED vs TIMEOUT.
+  static Future<void> _failWithCode(
+    HttpRequest request,
+    int statusCode,
+    String code,
+    String error,
+  ) {
+    return _sendJson(request, statusCode, {
+      'ok': false,
+      'error': error,
+      'code': code,
+    });
+  }
+
   static Future<ReturnResult<Map<String, dynamic>>> _readJsonBody(
     HttpRequest request,
   ) async {
@@ -268,6 +295,14 @@ class ExternalApiService {
       }
       if (method == 'PUT' && path == '/api/v1/settings/ai') {
         await _handlePutAiSettings(request);
+        return;
+      }
+      if (method == 'GET' && path == '/api/v1/termux/status') {
+        await _handleTermuxStatus(request);
+        return;
+      }
+      if (method == 'POST' && path == '/api/v1/termux/exec') {
+        await _handleTermuxExec(request);
         return;
       }
       await _fail(request, 404, 'not found: $method $path');
@@ -527,5 +562,154 @@ class ExternalApiService {
     SettingManager.setDirty(true);
     await SettingManager.save();
     await _ok(request, _aiSettingsData());
+  }
+
+  // --- Termux exec (v1.0.6) ------------------------------------------------
+  //
+  // Gated TWICE: the external API itself must be enabled (otherwise this
+  // server is not even running — the check is kept for defence in depth)
+  // AND the separate allowTermuxExec sub-switch must be on. Both failures
+  // are 403s whose message says exactly which switch is off.
+
+  static String? _termuxGateError() {
+    if (!_config.enable) {
+      return 'external API is disabled: enable it in Settings → 外部 AI 接口 → 启用外部 AI 接口';
+    }
+    if (!_config.allowTermuxExec) {
+      return 'Termux exec is disabled: enable 「允许执行 Termux 指令」 in Settings → 外部 AI 接口';
+    }
+    return null;
+  }
+
+  static Future<void> _handleTermuxStatus(HttpRequest request) async {
+    final gate = _termuxGateError();
+    if (gate != null) {
+      await _failWithCode(request, 403, 'TERMUX_EXEC_DISABLED', gate);
+      return;
+    }
+    final status = await TermuxBridge.status();
+    await _ok(request, {
+      'installed': status['installed'] == true,
+      'permission_granted': status['permission_granted'] == true,
+      'ready': status['ready'] == true,
+    });
+  }
+
+  // Truncate to at most kTermuxMaxOutputBytes of UTF-8, on a code-unit
+  // boundary that keeps the text valid (allowMalformed drops a partial
+  // trailing sequence). Returns (text, truncated).
+  static (String, bool) _truncateOutput(String text) {
+    final bytes = utf8.encode(text);
+    if (bytes.length <= kTermuxMaxOutputBytes) {
+      return (text, false);
+    }
+    final cut = utf8.decode(
+      bytes.sublist(0, kTermuxMaxOutputBytes),
+      allowMalformed: true,
+    );
+    return (cut, true);
+  }
+
+  static Future<void> _handleTermuxExec(HttpRequest request) async {
+    final gate = _termuxGateError();
+    if (gate != null) {
+      await _failWithCode(request, 403, 'TERMUX_EXEC_DISABLED', gate);
+      return;
+    }
+    // Serial lock: checked and set synchronously before any await, so
+    // two concurrent requests cannot both slip through.
+    if (_termuxBusy) {
+      await _failWithCode(
+        request,
+        429,
+        'BUSY',
+        'another Termux command is already running; retry shortly',
+      );
+      return;
+    }
+    _termuxBusy = true;
+    try {
+      final body = await _readJsonBody(request);
+      if (body.error != null) {
+        await _fail(request, 400, body.error!.message);
+        return;
+      }
+      final commandRaw = body.data!['command'];
+      if (commandRaw is! String || commandRaw.trim().isEmpty) {
+        await _fail(request, 400, 'field "command" (non-empty string) is required');
+        return;
+      }
+      final command = commandRaw;
+      if (command.length > kTermuxMaxCommandLength) {
+        await _fail(
+          request,
+          400,
+          'command too long (max $kTermuxMaxCommandLength characters)',
+        );
+        return;
+      }
+      var timeoutSeconds = kTermuxDefaultTimeoutSeconds;
+      final timeoutRaw = body.data!['timeout'];
+      if (timeoutRaw != null) {
+        if (timeoutRaw is! num) {
+          await _fail(request, 400, 'field "timeout" must be a number of seconds');
+          return;
+        }
+        timeoutSeconds = timeoutRaw.toInt();
+        if (timeoutSeconds < 1) {
+          timeoutSeconds = 1;
+        }
+        if (timeoutSeconds > kTermuxMaxTimeoutSeconds) {
+          timeoutSeconds = kTermuxMaxTimeoutSeconds;
+        }
+      }
+
+      // Only metadata is ever logged — never the command text itself.
+      Log.w(
+        'ExternalApiService termux exec: len=${command.length} timeout=${timeoutSeconds}s',
+      );
+      final result = await TermuxBridge.exec(command, timeoutSeconds);
+      if (result['ok'] != true) {
+        final code = (result['error_code'] as String?) ?? 'EXEC_FAILED';
+        final message = (result['error_message'] as String?) ?? code;
+        // A timeout is a normal execution outcome, reported in the same
+        // shape as a completed run rather than as a transport error.
+        if (code == 'TIMEOUT') {
+          await _ok(request, {
+            'exit_code': null,
+            'stdout': '',
+            'stderr': '',
+            'timed_out': true,
+            'truncated_stdout': false,
+            'truncated_stderr': false,
+          });
+          return;
+        }
+        final statusCode = switch (code) {
+          'TERMUX_NOT_INSTALLED' => 503,
+          'PERMISSION_DENIED' => 403,
+          'EXTERNAL_APPS_DISABLED' => 403,
+          _ => 500,
+        };
+        await _failWithCode(request, statusCode, code, message);
+        return;
+      }
+      final (stdout, truncatedStdout) = _truncateOutput(
+        (result['stdout'] as String?) ?? '',
+      );
+      final (stderr, truncatedStderr) = _truncateOutput(
+        (result['stderr'] as String?) ?? '',
+      );
+      await _ok(request, {
+        'exit_code': result['exit_code'],
+        'stdout': stdout,
+        'stderr': stderr,
+        'timed_out': false,
+        'truncated_stdout': truncatedStdout,
+        'truncated_stderr': truncatedStderr,
+      });
+    } finally {
+      _termuxBusy = false;
+    }
   }
 }

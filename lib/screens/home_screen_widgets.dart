@@ -515,6 +515,12 @@ class HomeWidgetOptions {
   HomeWidgetCard0Options? netshare;
   HomeWidgetCard0Options? statistics;
   HomeWidgetCard0Options? backupAndSync;
+  // yousj-plus (v1.0.6): three fork entries appended after BackupAndSync —
+  // Termux (launch/install the bundled Termux), 外部 AI (external AI API
+  // settings), 内置 AI (built-in AI assistant chat).
+  HomeWidgetCard0Options? termux;
+  HomeWidgetCard0Options? externalAi;
+  HomeWidgetCard0Options? builtinAi;
 
   final Map<FocusNode?, GlobalKey?> focusToKeys = {};
   HomeWidgetOptions({
@@ -546,6 +552,9 @@ class HomeWidgetOptions {
     this.netshare,
     this.statistics,
     this.backupAndSync,
+    this.termux,
+    this.externalAi,
+    this.builtinAi,
   }) {
     focusToKeys[runtimeInfo?.focusNode] = runtimeInfo?.key;
     focusToKeys[memoryInfo?.focusNode] = memoryInfo?.key;
@@ -576,6 +585,9 @@ class HomeWidgetOptions {
     focusToKeys[netshare?.focusNode] = netshare?.key;
     focusToKeys[statistics?.focusNode] = statistics?.key;
     focusToKeys[backupAndSync?.focusNode] = backupAndSync?.key;
+    focusToKeys[termux?.focusNode] = termux?.key;
+    focusToKeys[externalAi?.focusNode] = externalAi?.key;
+    focusToKeys[builtinAi?.focusNode] = builtinAi?.key;
   }
 }
 
@@ -1372,6 +1384,90 @@ class BackupAndSyncCard extends TextCard0 {
 
 class _BackupAndSyncCardState extends TextCard0State<BackupAndSyncCard> {}
 
+// yousj-plus (v1.0.6): fork-only home-grid entries. Their titles are
+// literals rather than i18n keys, like the fork's other added screens
+// (设置里的「外部 AI 接口」等也是中文硬编码); the slang i18n tables are
+// generated and are not regenerated for fork additions.
+class TermuxCard extends TextCard0 {
+  const TermuxCard({
+    super.key,
+    super.onPressed,
+    super.onLongPress,
+    super.focusNode,
+  }) : super(icon: Icons.terminal_outlined, title: "Termux");
+
+  @override
+  State<TermuxCard> createState() => _TermuxCardState();
+
+  static bool supportedCurrentPlatfrom() {
+    // The launch/install bridge is Android-only; elsewhere the entry
+    // would be a dead button, so it is not offered.
+    return Platform.isAndroid;
+  }
+
+  static String id() {
+    return "termux";
+  }
+
+  static int crossAxisCellCount() {
+    return 4;
+  }
+}
+
+class _TermuxCardState extends TextCard0State<TermuxCard> {}
+
+class ExternalAiCard extends TextCard0 {
+  const ExternalAiCard({
+    super.key,
+    super.onPressed,
+    super.onLongPress,
+    super.focusNode,
+  }) : super(icon: Icons.api_outlined, title: "外部 AI");
+
+  @override
+  State<ExternalAiCard> createState() => _ExternalAiCardState();
+
+  static bool supportedCurrentPlatfrom() {
+    return true;
+  }
+
+  static String id() {
+    return "external_ai";
+  }
+
+  static int crossAxisCellCount() {
+    return 4;
+  }
+}
+
+class _ExternalAiCardState extends TextCard0State<ExternalAiCard> {}
+
+class BuiltinAiCard extends TextCard0 {
+  const BuiltinAiCard({
+    super.key,
+    super.onPressed,
+    super.onLongPress,
+    super.focusNode,
+  }) : super(icon: Icons.smart_toy_outlined, title: "内置 AI");
+
+  @override
+  State<BuiltinAiCard> createState() => _BuiltinAiCardState();
+
+  static bool supportedCurrentPlatfrom() {
+    return true;
+  }
+
+  static String id() {
+    return "builtin_ai";
+  }
+
+  static int crossAxisCellCount() {
+    return 4;
+  }
+}
+
+class _BuiltinAiCardState extends TextCard0State<BuiltinAiCard> {}
+
 class OutboundModeCard extends StatefulWidget {
   const OutboundModeCard({super.key, this.onChanged, this.focusNode});
 
@@ -2108,6 +2204,17 @@ class HomeWidgets {
     if (BackupAndSyncCard.supportedCurrentPlatfrom()) {
       ids.add(BackupAndSyncCard.id());
     }
+    // yousj-plus (v1.0.6): Termux sits right after BackupAndSync, then a
+    // new row: 外部 AI (left), 内置 AI (right).
+    if (TermuxCard.supportedCurrentPlatfrom()) {
+      ids.add(TermuxCard.id());
+    }
+    if (ExternalAiCard.supportedCurrentPlatfrom()) {
+      ids.add(ExternalAiCard.id());
+    }
+    if (BuiltinAiCard.supportedCurrentPlatfrom()) {
+      ids.add(BuiltinAiCard.id());
+    }
 
     return ids;
   }
@@ -2356,6 +2463,17 @@ class HomeWidgets {
     }
     if (BackupAndSyncCard.supportedCurrentPlatfrom()) {
       ids.add(BackupAndSyncCard.id());
+    }
+    // yousj-plus (v1.0.6): Termux right after BackupAndSync, then a new
+    // row: 外部 AI (left), 内置 AI (right).
+    if (TermuxCard.supportedCurrentPlatfrom()) {
+      ids.add(TermuxCard.id());
+    }
+    if (ExternalAiCard.supportedCurrentPlatfrom()) {
+      ids.add(ExternalAiCard.id());
+    }
+    if (BuiltinAiCard.supportedCurrentPlatfrom()) {
+      ids.add(BuiltinAiCard.id());
     }
 
     return ids;
@@ -2792,13 +2910,65 @@ class HomeWidgets {
         ),
       );
     }
+    if (TermuxCard.id() == id &&
+        options.termux != null &&
+        TermuxCard.supportedCurrentPlatfrom()) {
+      return GridItem(
+        crossAxisCellCount: TermuxCard.crossAxisCellCount(),
+        id: id,
+        child: TermuxCard(
+          key: options.termux!.key,
+          onPressed: options.termux!.onPressed,
+          onLongPress: options.termux!.onLongPress,
+          focusNode: options.termux!.focusNode,
+        ),
+      );
+    }
+    if (ExternalAiCard.id() == id &&
+        options.externalAi != null &&
+        ExternalAiCard.supportedCurrentPlatfrom()) {
+      return GridItem(
+        crossAxisCellCount: ExternalAiCard.crossAxisCellCount(),
+        id: id,
+        child: ExternalAiCard(
+          key: options.externalAi!.key,
+          onPressed: options.externalAi!.onPressed,
+          onLongPress: options.externalAi!.onLongPress,
+          focusNode: options.externalAi!.focusNode,
+        ),
+      );
+    }
+    if (BuiltinAiCard.id() == id &&
+        options.builtinAi != null &&
+        BuiltinAiCard.supportedCurrentPlatfrom()) {
+      return GridItem(
+        crossAxisCellCount: BuiltinAiCard.crossAxisCellCount(),
+        id: id,
+        child: BuiltinAiCard(
+          key: options.builtinAi!.key,
+          onPressed: options.builtinAi!.onPressed,
+          onLongPress: options.builtinAi!.onLongPress,
+          focusNode: options.builtinAi!.focusNode,
+        ),
+      );
+    }
 
     return null;
   }
 
   static List<GridItem> getWidgets(HomeWidgetOptions options) {
     final widgets = SettingManager.getConfig().uiScreen.widgets;
-    final widgetIds = widgets.isEmpty ? getDefaultWidgetIds() : widgets;
+    final widgetIds = widgets.isEmpty
+        ? getDefaultWidgetIds()
+        : List<String>.from(widgets);
+    // yousj-plus (v1.0.6): layouts saved before v1.0.6 cannot contain the
+    // three new fork entries; append any that are missing (in order) so
+    // the entries actually show up instead of silently staying absent.
+    for (final id in [TermuxCard.id(), ExternalAiCard.id(), BuiltinAiCard.id()]) {
+      if (!widgetIds.contains(id)) {
+        widgetIds.add(id);
+      }
+    }
     List<GridItem> items = [];
     for (var id in widgetIds) {
       final item = createWidget(id, options);

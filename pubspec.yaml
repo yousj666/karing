@@ -2,7 +2,7 @@ name: karing
 description: "Yousj Enhanced - sing-box client (independent fork; not affiliated with the original project)"
 
 publish_to: none 
-version: 1.0.5+5
+version: 1.0.6+6
 environment:
   sdk: ">=3.12.2 <4.0.0"
   flutter: ">=3.44.0"

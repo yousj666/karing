@@ -10,6 +10,9 @@ import java.util.Locale
 class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         GeneratedPluginRegistrant.registerWith(flutterEngine)
+        // yousj-plus (v1.0.6): Termux bridge (RUN_COMMAND exec + launch /
+        // install of the bundled Termux). See TermuxBridge.kt.
+        TermuxBridge.register(flutterEngine, this)
         MainChannelManager.init(flutterEngine)
         MainChannelManager.registerCallback(
                 "getCommand",

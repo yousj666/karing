@@ -49,10 +49,13 @@ import 'package:karing/app/utils/proxy_conf_utils.dart';
 import 'package:karing/app/utils/singbox_config_builder.dart';
 import 'package:karing/app/utils/stacktrace_utils.dart';
 import 'package:karing/app/utils/system_scheme_utils.dart';
+import 'package:karing/app/utils/termux_bridge.dart';
 import 'package:karing/app/utils/url_launcher_utils.dart';
 import 'package:karing/app/utils/vpn_action_handler.dart';
 import 'package:karing/i18n/strings.g.dart';
 import 'package:karing/screens/accessibility_screen.dart';
+import 'package:karing/screens/ai_assistant_screen.dart';
+import 'package:karing/screens/external_api_screen.dart';
 import 'package:ant_icons_plus/ant_icons_plus.dart';
 import 'package:karing/screens/common_dialog.dart';
 import 'package:karing/screens/dialog_utils.dart';
@@ -218,6 +221,15 @@ class _HomeScreenState extends LasyRenderingState<HomeScreen>
   final FocusNode _focusNodeBackupAndSync = FocusNode(
     debugLabel: "scroll.${BackupAndSyncCard.id()}",
   );
+  final FocusNode _focusNodeTermux = FocusNode(
+    debugLabel: "scroll.${TermuxCard.id()}",
+  );
+  final FocusNode _focusNodeExternalAi = FocusNode(
+    debugLabel: "scroll.${ExternalAiCard.id()}",
+  );
+  final FocusNode _focusNodeBuiltinAi = FocusNode(
+    debugLabel: "scroll.${BuiltinAiCard.id()}",
+  );
 
   final _scrollController = ScrollController();
   bool _agreementApproved = false;
@@ -361,6 +373,21 @@ class _HomeScreenState extends LasyRenderingState<HomeScreen>
         onTapBackupAndSync,
         null,
         _focusNodeBackupAndSync,
+      ),
+      termux: HomeWidgetCard0Options(
+        onTapTermux,
+        null,
+        _focusNodeTermux,
+      ),
+      externalAi: HomeWidgetCard0Options(
+        onTapExternalAi,
+        null,
+        _focusNodeExternalAi,
+      ),
+      builtinAi: HomeWidgetCard0Options(
+        onTapBuiltinAi,
+        null,
+        _focusNodeBuiltinAi,
       ),
     );
 
@@ -1156,6 +1183,27 @@ class _HomeScreenState extends LasyRenderingState<HomeScreen>
   }
 
   Future<ReturnResultError?> _onRequestStartVPN(String from) async {
+    // yousj-plus (v1.0.6): a node selection made outside this screen —
+    // the built-in AI assistant's select action — is recorded through
+    // ServerManager.addRecent + the dirty flag, the same bookkeeping the
+    // init/reload paths re-read via getMostRecent(). Adopt it here so a
+    // connect requested right after such a selection is built from the
+    // node that was actually chosen, not this screen's stale copy.
+    if (ServerManager.getDirty()) {
+      final recent = ServerManager.getMostRecent();
+      if (recent != null &&
+          recent.tag.isNotEmpty &&
+          !_currentServer.isSame(recent)) {
+        final server = ServerManager.getConfig().getByGroupIdAndTag(
+          recent.groupid,
+          recent.tag,
+        );
+        if (server != null) {
+          _currentServer = server;
+          VPNService.setCurrent(_currentServer);
+        }
+      }
+    }
     if (ServerManager.getUpdateDirty()) {
       ServerManager.setDirty(true);
     }
@@ -1687,6 +1735,88 @@ class _HomeScreenState extends LasyRenderingState<HomeScreen>
   void onTapBackupAndSync() async {
     await GroupHelper.showBackupAndSync(context);
     await checkAndReload("onTapBackupAndSync");
+    setState(() {});
+  }
+
+  // yousj-plus (v1.0.6): Termux grid entry. Already installed → open the
+  // user's existing Termux as-is (its data stays exactly where it is).
+  // Not installed → explain, then start the system installer for the
+  // bundled official Termux APK; Android makes the user confirm once in
+  // the system install UI, and Termux opens automatically afterwards.
+  void onTapTermux() async {
+    void snack(String text) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(text)));
+    }
+
+    final status = await TermuxBridge.status();
+    if (!mounted) {
+      return;
+    }
+    if (status['installed'] == true) {
+      final result = await TermuxBridge.openOrInstall();
+      if (result['ok'] != true) {
+        snack("打开 Termux 失败：${result['error_message'] ?? ''}");
+      }
+      return;
+    }
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("内置 Termux"),
+        content: const Text(
+          "本应用内置了官方 Termux 安装包。点「安装」后会打开系统安装界面，"
+          "需要你在系统界面再点一次确认（安卓的限制，无法静默安装）；装完会自动打开 Termux。\n\n"
+          "如果手机里已经装了 Termux，则会直接打开现有的 Termux，你原来的数据原样使用，不做任何迁移或改动。",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("取消"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("安装"),
+          ),
+        ],
+      ),
+    );
+    if (go != true || !mounted) {
+      return;
+    }
+    final result = await TermuxBridge.openOrInstall();
+    if (result['ok'] == true) {
+      if (result['result'] == 'install_started') {
+        snack("已打开系统安装界面，点「安装」确认；装完会自动打开 Termux");
+      }
+    } else {
+      snack("${result['error_message'] ?? '安装 Termux 失败'}");
+    }
+    await checkAndReload("onTapTermux");
+    setState(() {});
+  }
+
+  // yousj-plus (v1.0.6): same page as 设置 → 外部 AI 接口.
+  void onTapExternalAi() async {
+    await ExternalApiConfigEditor.show(context);
+    await checkAndReload("onTapExternalAi");
+    setState(() {});
+  }
+
+  // yousj-plus (v1.0.6): same page as 设置 → AI 助手.
+  void onTapBuiltinAi() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        settings: AiAssistantScreen.routeSettings(),
+        builder: (context) => const AiAssistantScreen(),
+      ),
+    );
+    await checkAndReload("onTapBuiltinAi");
     setState(() {});
   }
 

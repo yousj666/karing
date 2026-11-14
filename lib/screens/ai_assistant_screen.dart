@@ -11,6 +11,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:karing/app/modules/setting_manager.dart';
+import 'package:karing/app/utils/ai_assistant_tools.dart';
 import 'package:karing/app/utils/ai_assistant_utils.dart';
 import 'package:karing/screens/add_profile_by_link_or_content_screen.dart';
 import 'package:karing/screens/group_item_creator.dart';
@@ -135,7 +136,8 @@ class _AiAssistantScreenState extends LasyRenderingState<AiAssistantScreen> {
     text:
         "我是内置 AI 助手，懂 sing-box 与 Clash 配置和分流规则。\n"
         "你可以让我帮你生成、修改或讲解配置；我生成的完整配置可以直接一键导入为配置。\n"
-        "目前我还不能直接替你连接、断开或切换节点（该能力即将推出）。",
+        "现在我还能替你做三件事：选中节点/配置、发起连接、按真实延迟数据推荐节点。连接结果以应用的真实状态为准，我不会假报已连接。\n"
+        "断开、删除、改设置这类操作我仍然做不了，会告诉你去哪里手动操作。",
   );
 
   @override
@@ -221,7 +223,25 @@ class _AiAssistantScreenState extends LasyRenderingState<AiAssistantScreen> {
       );
     }
 
-    final result = await AiAssistantUtils.chat(history);
+    final result = await AiAssistantUtils.chatWithTools(
+      history,
+      AiAssistantTools.execute,
+      (record) {
+        // Post the record of each executed action into the transcript as
+        // it happens, so the user sees exactly what was done even before
+        // the assistant's summary arrives. localOnly: the record is a UI
+        // receipt, not something to feed back as conversation.
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _entries.add(
+            _ChatEntry(isUser: false, localOnly: true, text: record),
+          );
+        });
+        _scrollToBottom();
+      },
+    );
     if (!mounted) {
       return;
     }

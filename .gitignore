@@ -90,3 +90,6 @@ build_log.txt
 build_output.txt
 notary_log.json
 /tvos/Build
+
+# yousj-plus: bundled Termux APK is downloaded by CI at build time (pinned + checksummed); never commit the binary.
+android/app/src/main/assets/termux/

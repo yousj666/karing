@@ -120,10 +120,16 @@ class SettingConfigItemExternalApi {
   String token = "";
   bool allowLan = false;
 
+  // yousj-plus (v1.0.6): separate, extra opt-in for the Termux exec
+  // endpoints. Even with the API enabled and a valid token, command
+  // execution stays off unless the user turns this on explicitly.
+  bool allowTermuxExec = false;
+
   Map<String, dynamic> toJson() => {
     'enable': enable,
     'token': token,
     'allow_lan': allowLan,
+    'allow_termux_exec': allowTermuxExec,
   };
   void fromJson(Map<String, dynamic>? map) {
     if (map == null) {
@@ -133,6 +139,7 @@ class SettingConfigItemExternalApi {
     enable = map["enable"] ?? false;
     token = map["token"] ?? "";
     allowLan = map["allow_lan"] ?? false;
+    allowTermuxExec = map["allow_termux_exec"] ?? false;
   }
 
   static SettingConfigItemExternalApi fromJsonStatic(

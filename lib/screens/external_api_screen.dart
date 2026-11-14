@@ -86,6 +86,19 @@ class ExternalApiConfigEditor {
         options.add(
           GroupItemOptions(
             switchOptions: GroupItemSwitchOptions(
+              name: "允许执行 Termux 指令",
+              tips: "开启后，带令牌的调用方可在 Termux 里执行任意命令（以 Termux 的用户身份运行）。风险很高：拿到令牌的一方等于拿到一个完整的 Termux 终端。不用时请保持关闭。",
+              switchValue: api.allowTermuxExec,
+              onSwitch: (bool value) async {
+                api.allowTermuxExec = value;
+                await persist();
+              },
+            ),
+          ),
+        );
+        options.add(
+          GroupItemOptions(
+            switchOptions: GroupItemSwitchOptions(
               name: "允许局域网访问",
               tips: "默认仅本机（127.0.0.1）可连接。开启后将监听所有网卡，同一局域网内的设备也能连接（仍需令牌校验）。仅在可信网络中开启。",
               switchValue: api.allowLan,

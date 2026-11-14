@@ -58,6 +58,27 @@ jobs:
         # exist on Linux runners and Gradle refuses to start.
         run: sed -i '/^org.gradle.java.home=/d' android/gradle.properties
 
+      - name: Bundle official Termux APK (pinned)
+        # yousj-plus (v1.0.6): the home-grid Termux entry installs Termux
+        # from a bundled asset when the user has none. This downloads the
+        # official termux-app GitHub Release build (arm64-v8a) into the
+        # Android assets at build time — the 35 MB binary is deliberately
+        # NOT committed to git. Version and SHA-256 are pinned; the
+        # digest comes from the release's own sha256sums file and was
+        # re-verified against the file itself. A checksum mismatch (or a
+        # failed download) fails the build instead of shipping an
+        # unverified binary.
+        run: |
+          set -euo pipefail
+          version="0.118.3"
+          sha256="72fdb596045116bf5ba1b5bdf5b26fddb9acc0bd074ad9f2da9eb0ae85e83a4e"
+          url="https://github.com/termux/termux-app/releases/download/v${version}/termux-app_v${version}+github-debug_arm64-v8a.apk"
+          dest="android/app/src/main/assets/termux/termux-app-arm64.apk"
+          mkdir -p "$(dirname "$dest")"
+          curl -fL --retry 3 -o "$dest" "$url"
+          echo "${sha256}  ${dest}" | sha256sum -c -
+          ls -la "$dest"
+
       - name: Build release APK
         run: flutter build apk --release --dart-define=KARING_BUILD_VERSION=${{ env.KARING_BUILD_VERSION }}
 
