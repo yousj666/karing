@@ -44,7 +44,7 @@ class HttpRequestResponse {
 /// reads .err / .latency).
 class DNSQueryResponse {
   String? err;
-  String latency = '';
+  int latency = 0;
   List<dynamic> answers = [];
 
   void fromJson(Map<String, dynamic>? map) {
@@ -52,7 +52,7 @@ class DNSQueryResponse {
       return;
     }
     err = (map['err'] ?? map['error'])?.toString();
-    latency = (map['latency'] ?? '').toString();
+    latency = (map['latency'] as num?)?.toInt() ?? 0;
     final rawAnswers = map['answers'] ?? map['Answer'];
     if (rawAnswers is List) {
       answers = rawAnswers;

@@ -64,29 +64,19 @@ class RulesetCodesUtils {
 
   /// FNV-1a 32-bit hash of the raw list content: stable per content, so the
   /// builder can detect rule-set updates.
-  static int _fnv1a(String content) {
-    int hash = 0x811c9dc5;
-    for (final unit in content.codeUnits) {
-      hash ^= unit & 0xff;
-      hash = (hash * 0x01000193) & 0xffffffff;
-      hash ^= (unit >> 8) & 0xff;
-      hash = (hash * 0x01000193) & 0xffffffff;
-    }
-    return hash;
+
+  static Future<Set<int>> siteCodesHashCode() async {
+    final codes = await siteCodes();
+    return codes.map((c) => c.hashCode).toSet();
   }
 
-  static Future<int> siteCodesHashCode() async {
-    await siteCodes();
-    return _fnv1a(_siteRaw ?? '');
+  static Future<Set<int>> ipCodesHashCode() async {
+    final codes = await ipCodes();
+    return codes.map((c) => c.hashCode).toSet();
   }
 
-  static Future<int> ipCodesHashCode() async {
-    await ipCodes();
-    return _fnv1a(_ipRaw ?? '');
-  }
-
-  static Future<int> aclCodesHashCode() async {
-    await aclCodes();
-    return _fnv1a(_aclRaw ?? '');
+  static Future<Set<int>> aclCodesHashCode() async {
+    final codes = await aclCodes();
+    return codes.map((c) => c.hashCode).toSet();
   }
 }

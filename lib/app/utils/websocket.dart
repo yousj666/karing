@@ -61,6 +61,7 @@ class Websocket {
         }
       },
       onDone: () {
+        _socket = null;
         if (!_closedByUser) {
           onDone?.call();
         }
@@ -79,5 +80,11 @@ class Websocket {
       await _socket?.close();
     } catch (_) {}
     _socket = null;
+  }
+
+  /// Whether the socket is currently open (home_tvos_screen.dart polls
+  /// this from a reconnect timer).
+  bool connected() {
+    return _socket != null;
   }
 }

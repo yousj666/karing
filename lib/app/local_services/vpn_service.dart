@@ -102,7 +102,7 @@ class VPNService {
     _currentServerForUrltest = current;
   }
 
-  static Future<String> getCurrentRealTag() async {
+  static String getCurrentRealTag() {
     final urltest = _currentServerForUrltest;
     if (urltest != null && urltest.now.isNotEmpty) {
       return urltest.now;
@@ -306,7 +306,7 @@ class VPNService {
   /// signature and unused by callers.
   static void getOutboundsWithoutUrltest(
     Set<String> allTags,
-    Tuple2<List<ProxyConfig>, List<dynamic>> outbounds,
+    Tuple2<List<ProxyConfig>, List<dynamic>>? outbounds,
     dynamic unused1,
     dynamic unused2,
   ) {
@@ -316,7 +316,7 @@ class VPNService {
             server.type == kOutboundTypeSelector) {
           continue;
         }
-        outbounds.item1.add(server);
+        outbounds?.item1.add(server);
         allTags.add(server.tag);
       }
     }

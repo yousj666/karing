@@ -10,8 +10,14 @@
 
 import 'dart:io';
 
+import 'package:karing/app/modules/board_provider_manager.dart';
 import 'package:karing/app/runtime/return_result.dart';
 import 'package:vpn_service/state.dart';
+
+// Upstream re-exported the plugin model library through this hub:
+// most screens import proxy_conf_utils.dart and use ProxyConfig,
+// ServerConfigGroupItem, ProxyStrategy, ... from it transitively.
+export 'package:vpn_service/state.dart';
 
 class ProxyConfUtils {
   ProxyConfUtils._();
@@ -99,5 +105,57 @@ class ProxyConfUtils {
     return ReturnResult<String>(
       error: ReturnResultError('no url found in content'),
     );
+  }
+}
+
+/// Default system-proxy bypass domains (upstream spelling preserved:
+/// "Doamins"). `.toList()` at call sites implies a Set.
+const Set<String> ProxyBypassDoaminsDefault = {
+  'localhost',
+  '127.0.0.1',
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+  '*.local',
+};
+
+/// App-side helpers on the plugin's profile model. These live here (not
+/// in the plugin) because [getBindProvider] needs app services
+/// (BoardProviderManager) that the self-contained plugin cannot see.
+extension ServerConfigGroupItemApp on ServerConfigGroupItem {
+  /// The subscription's ISP/provider binding info, if any.
+  SubscriptionISP? getISP() {
+    return isp;
+  }
+
+  /// Drops servers whose last latency test failed (latency holds an
+  /// error string rather than a numeric delay). Returns true when the
+  /// server list changed.
+  bool removeLatencyError() {
+    final before = servers.length;
+    servers.removeWhere(
+      (s) => s.latency.isNotEmpty && int.tryParse(s.latency) == null,
+    );
+    return servers.length != before;
+  }
+
+  /// The board provider this profile is bound to: by ISP id first, then
+  /// by matching the profile's site against provider domains.
+  BoardProviderConfig? getBindProvider() {
+    final ispId = isp?.id ?? '';
+    if (ispId.isNotEmpty) {
+      final byId = BoardProviderManager.getProviderById(ispId);
+      if (byId != null) {
+        return byId;
+      }
+    }
+    if (site.isNotEmpty) {
+      for (final provider in BoardProviderManager.getProviders()) {
+        if (provider.domain == site || provider.domains.contains(site)) {
+          return provider;
+        }
+      }
+    }
+    return null;
   }
 }

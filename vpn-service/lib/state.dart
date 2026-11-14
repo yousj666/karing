@@ -546,6 +546,21 @@ class ServerDiversionGroupRuleSetItem {
       ..url = url;
   }
 
+  /// Derives a short display name for a remote rule-set from its URL:
+  /// the last path segment without its extension
+  /// (diversion_rules_screen.dart's getDiversionShortName).
+  static String? getTagFromUrl(Uri uri) {
+    if (uri.pathSegments.isEmpty) {
+      return null;
+    }
+    var name = uri.pathSegments.last;
+    final dot = name.lastIndexOf('.');
+    if (dot > 0) {
+      name = name.substring(0, dot);
+    }
+    return name.isEmpty ? null : name;
+  }
+
   Map<String, dynamic> toJson() => {
     'type': type,
     'tag': tag,

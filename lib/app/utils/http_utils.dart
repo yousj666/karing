@@ -170,7 +170,7 @@ class HttpUtils {
     Uri url,
     int? proxyPort,
     String? userAgent,
-    String? xhwid,
+    bool? xhwid,
     Duration? timeout,
   ) async {
     Future<ReturnResult<Tuple2<int, HttpHeaders>>> run() async {
