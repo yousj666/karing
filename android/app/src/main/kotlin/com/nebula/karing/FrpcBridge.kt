@@ -2,6 +2,8 @@ package com.nebula.karing
 
 import android.app.Activity
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -30,6 +32,14 @@ import java.util.Collections
 // success" / "start proxy success" — the literal strings in frp
 // v0.62.1), never assumed.
 //
+// v1.0.8: the tunnel self-heals. The generated config sets
+// loginFailExit = false so a failed login never makes frpc give up,
+// and this bridge supervises the process: an unexpected exit (network
+// drop, frps restart, ...) is restarted with a 5s -> 15s -> 30s -> 60s
+// capped backoff until the tunnel is up again. Supervision only runs
+// while the Dart side wants the tunnel (API on + tunnel on + a server
+// address configured); stop() cancels any pending restart for good.
+//
 // The frp token only ever lands in the private config file. It is not
 // written to any log (ours or, per frp's own logging, frpc's).
 object FrpcBridge {
@@ -39,6 +49,9 @@ object FrpcBridge {
     private const val PROXY_NAME = "yousj-external-ai"
     private const val MAX_LOG_LINES = 120
     private const val LOG_TAIL_FOR_UI = 30
+
+    // Restart backoff ladder in seconds; the last value is the cap.
+    private val RESTART_BACKOFF_SEC = longArrayOf(5, 15, 30, 60)
 
     private var channel: MethodChannel? = null
     private var appContext: Context? = null
@@ -51,6 +64,26 @@ object FrpcBridge {
     @Volatile private var proxyOk = false
     @Volatile private var lastError: String? = null
     @Volatile private var exitCode: Int? = null
+
+    // --- supervision state (v1.0.8) ---
+    // wantRunning mirrors the Dart side's intent: true after a start()
+    // with a non-blank server address, false after stop() or a blank
+    // address. lastConfig is what the supervisor restarts with.
+    @Volatile private var wantRunning = false
+    @Volatile private var lastConfig: Config? = null
+    @Volatile private var retryCount = 0
+    @Volatile private var restartPending = false
+    @Volatile private var nextRetryDelaySec = 0L
+    private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile private var pendingRestart: Runnable? = null
+
+    private data class Config(
+        val serverAddr: String,
+        val serverPort: Int,
+        val remotePort: Int,
+        val localPort: Int,
+        val token: String,
+    )
 
     private val logLines: MutableList<String> =
         Collections.synchronizedList(mutableListOf())
@@ -65,8 +98,8 @@ object FrpcBridge {
             when (call.method) {
                 "start" -> {
                     val serverAddr = call.argument<String>("serverAddr") ?: ""
-                    val serverPort = call.argument<Int>("serverPort") ?: 7000
-                    val remotePort = call.argument<Int>("remotePort") ?: 18777
+                    val serverPort = call.argument<Int>("serverPort") ?: 0
+                    val remotePort = call.argument<Int>("remotePort") ?: 0
                     val localPort = call.argument<Int>("localPort") ?: 18777
                     val token = call.argument<String>("token") ?: ""
                     start(serverAddr, serverPort, remotePort, localPort, token)
@@ -88,16 +121,10 @@ object FrpcBridge {
     private fun frpcBinary(ctx: Context): File =
         File(ctx.applicationInfo.nativeLibraryDir, FRPC_LIB_NAME)
 
-    private fun fingerprint(
-        serverAddr: String,
-        serverPort: Int,
-        remotePort: Int,
-        localPort: Int,
-        token: String,
-    ): String =
+    private fun fingerprint(cfg: Config): String =
         // The token contributes only its hash, so the fingerprint can be
         // kept/compared without holding another copy of the secret.
-        "$serverAddr|$serverPort|$remotePort|$localPort|${token.hashCode()}"
+        "${cfg.serverAddr}|${cfg.serverPort}|${cfg.remotePort}|${cfg.localPort}|${cfg.token.hashCode()}"
 
     @Synchronized
     private fun start(
@@ -107,14 +134,32 @@ object FrpcBridge {
         localPort: Int,
         token: String,
     ) {
-        val ctx = appContext ?: return
-        val fp = fingerprint(serverAddr, serverPort, remotePort, localPort, token)
-        val alive = process?.isAlive == true
-        if (alive && currentFingerprint == fp) {
+        if (serverAddr.isBlank()) {
+            // Not configured: never start, never supervise. (The Dart
+            // side checks this first and calls stop(); this is the
+            // defensive twin of that check.)
+            wantRunning = false
+            lastError = "服务器地址为空"
             return
         }
-        if (serverAddr.isBlank()) {
-            lastError = "服务器地址为空"
+        val cfg = Config(serverAddr, serverPort, remotePort, localPort, token)
+        lastConfig = cfg
+        wantRunning = true
+        retryCount = 0
+        nextRetryDelaySec = 0
+        cancelPendingRestartLocked()
+        startLocked(cfg)
+    }
+
+    // Start (or restart) the frpc process for [cfg]. Caller holds the
+    // object lock. A same-fingerprint process that is already alive is
+    // left alone, so repeated applyFromConfig() calls are cheap no-ops.
+    @Synchronized
+    private fun startLocked(cfg: Config) {
+        val ctx = appContext ?: return
+        val fp = fingerprint(cfg)
+        val alive = process?.isAlive == true
+        if (alive && currentFingerprint == fp) {
             return
         }
         stopLocked()
@@ -137,7 +182,7 @@ object FrpcBridge {
                 dir.mkdirs()
             }
             val file = File(dir, "frpc.toml")
-            file.writeText(buildConfig(serverAddr, serverPort, remotePort, localPort, token))
+            file.writeText(buildConfig(cfg))
             file
         } catch (e: Exception) {
             lastError = "写通道配置失败：${e.message}"
@@ -157,7 +202,10 @@ object FrpcBridge {
         }
         process = proc
         currentFingerprint = fp
-        Log.i(TAG, "frpc started (server=$serverAddr:$serverPort remotePort=$remotePort)")
+        Log.i(
+            TAG,
+            "frpc started (server=${cfg.serverAddr}:${cfg.serverPort} remotePort=${cfg.remotePort})",
+        )
         val thread = Thread {
             try {
                 proc.inputStream.bufferedReader().forEachLine { line -> addLogLine(line) }
@@ -169,15 +217,24 @@ object FrpcBridge {
             } catch (e: Exception) {
                 null
             }
-            if (process === proc) {
-                exitCode = code
-                if (!stoppedByUser && loginOk.not() && lastError == null) {
-                    lastError = "frpc 已退出（代码 ${code ?: "?"}）"
+            synchronized(this@FrpcBridge) {
+                if (process === proc) {
+                    exitCode = code
+                    process = null
+                    if (!stoppedByUser && loginOk.not() && lastError == null) {
+                        lastError = "frpc 已退出（代码 ${code ?: "?"}）"
+                    }
+                    if (!stoppedByUser) {
+                        Log.w(TAG, "frpc exited: code=$code")
+                    }
+                    // Self-heal: an unexpected exit while the tunnel is
+                    // wanted schedules a backoff restart. stop() and a
+                    // blank-config start() both clear wantRunning first,
+                    // so intentional stops never land here.
+                    if (!stoppedByUser && wantRunning) {
+                        scheduleRestartLocked()
+                    }
                 }
-                if (!stoppedByUser) {
-                    Log.w(TAG, "frpc exited: code=$code")
-                }
-                process = null
             }
         }
         thread.isDaemon = true
@@ -186,8 +243,50 @@ object FrpcBridge {
         readerThread = thread
     }
 
+    // Schedule the next supervised restart. Caller holds the lock and
+    // has already established that the tunnel is wanted and the process
+    // is gone. Backoff: 5s, 15s, 30s, then 60s forever until the proxy
+    // is up (a successful proxy start resets the counter — see
+    // addLogLine).
+    private fun scheduleRestartLocked() {
+        val cfg = lastConfig ?: return
+        cancelPendingRestartLocked()
+        retryCount += 1
+        val idx = minOf(retryCount - 1, RESTART_BACKOFF_SEC.size - 1)
+        val delaySec = RESTART_BACKOFF_SEC[idx]
+        nextRetryDelaySec = delaySec
+        restartPending = true
+        val runnable = Runnable {
+            synchronized(this@FrpcBridge) {
+                restartPending = false
+                nextRetryDelaySec = 0
+                if (wantRunning && !stoppedByUser && process == null) {
+                    Log.i(TAG, "supervisor restarting frpc (attempt $retryCount)")
+                    startLocked(cfg)
+                    // If that start failed synchronously (e.g. config
+                    // write error) no reader thread exists to schedule
+                    // the next round — do it here.
+                    if (process == null && wantRunning && !stoppedByUser) {
+                        scheduleRestartLocked()
+                    }
+                }
+            }
+        }
+        pendingRestart = runnable
+        mainHandler.postDelayed(runnable, delaySec * 1000)
+    }
+
+    private fun cancelPendingRestartLocked() {
+        pendingRestart?.let { mainHandler.removeCallbacks(it) }
+        pendingRestart = null
+        restartPending = false
+        nextRetryDelaySec = 0
+    }
+
     @Synchronized
     private fun stop() {
+        wantRunning = false
+        cancelPendingRestartLocked()
         stopLocked()
         stoppedByUser = true
     }
@@ -228,6 +327,10 @@ object FrpcBridge {
         }
         if (line.contains("start proxy success")) {
             proxyOk = true
+            // The tunnel is fully up: the backoff ladder starts over if
+            // it ever drops again.
+            retryCount = 0
+            nextRetryDelaySec = 0
         }
         val looksLikeError =
             line.contains("[E]") ||
@@ -259,6 +362,13 @@ object FrpcBridge {
             "last_error" to (lastError ?: ""),
             "exit_code" to (exitCode ?: -1),
             "log_tail" to tail,
+            // Supervision (v1.0.8): whether the bridge is trying to keep
+            // the tunnel up, how many restarts it has done in the
+            // current outage, and whether a restart is counting down.
+            "supervisor_active" to wantRunning,
+            "retry_count" to retryCount,
+            "restart_pending" to restartPending,
+            "next_retry_sec" to nextRetryDelaySec.toInt(),
         )
     }
 
@@ -267,27 +377,25 @@ object FrpcBridge {
     private fun tomlString(value: String): String =
         "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
-    private fun buildConfig(
-        serverAddr: String,
-        serverPort: Int,
-        remotePort: Int,
-        localPort: Int,
-        token: String,
-    ): String {
+    private fun buildConfig(cfg: Config): String {
         val sb = StringBuilder()
-        sb.append("serverAddr = ").append(tomlString(serverAddr)).append('\n')
-        sb.append("serverPort = ").append(serverPort).append('\n')
-        if (token.isNotEmpty()) {
+        sb.append("serverAddr = ").append(tomlString(cfg.serverAddr)).append('\n')
+        sb.append("serverPort = ").append(cfg.serverPort).append('\n')
+        // Never exit on a failed login: frpc keeps retrying in-process,
+        // and the bridge supervisor restarts the process itself if it
+        // ever dies anyway (v1.0.8).
+        sb.append("loginFailExit = false\n")
+        if (cfg.token.isNotEmpty()) {
             sb.append("auth.method = \"token\"\n")
-            sb.append("auth.token = ").append(tomlString(token)).append('\n')
+            sb.append("auth.token = ").append(tomlString(cfg.token)).append('\n')
         }
         sb.append('\n')
         sb.append("[[proxies]]\n")
         sb.append("name = ").append(tomlString(PROXY_NAME)).append('\n')
         sb.append("type = \"tcp\"\n")
         sb.append("localIP = \"127.0.0.1\"\n")
-        sb.append("localPort = ").append(localPort).append('\n')
-        sb.append("remotePort = ").append(remotePort).append('\n')
+        sb.append("localPort = ").append(cfg.localPort).append('\n')
+        sb.append("remotePort = ").append(cfg.remotePort).append('\n')
         return sb.toString()
     }
 }

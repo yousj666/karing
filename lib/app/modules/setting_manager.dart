@@ -133,15 +133,20 @@ class SettingConfigItemExternalApi {
   // reachable from the internet while the phone is behind NAT. The
   // tunnel is created automatically whenever the API itself is enabled
   // and this switch is on; turning the API off always stops the tunnel.
-  // The preset server below is the default frps endpoint shipped with
-  // the app; users can point it at their own frps in settings. The
-  // tunnel token is a shared secret with that frps: masked in the UI,
-  // never logged.
+  // v1.0.8: there is NO preset server any more — the user fills in their
+  // own frps endpoint and it takes effect once saved. All four fields
+  // default to unset (empty address/token, port 0 = unset; the settings
+  // fields show grey example placeholders instead). While the address
+  // is empty the tunnel reports "unconfigured" and frpc is never
+  // started. Values a user has already saved are untouched by this:
+  // fromJson only falls back for keys that are absent. The tunnel token
+  // is a shared secret with the user's frps: masked in the UI, never
+  // logged.
   bool tunnelEnable = true;
-  String tunnelServerAddr = "120.48.25.99";
-  int tunnelServerPort = 7000;
-  int tunnelRemotePort = 18777;
-  String tunnelToken = "816b047a5300afe135c9c4bef4ec72c5b0d8c976c7373fec";
+  String tunnelServerAddr = "";
+  int tunnelServerPort = 0;
+  int tunnelRemotePort = 0;
+  String tunnelToken = "";
 
   Map<String, dynamic> toJson() => {
     'enable': enable,

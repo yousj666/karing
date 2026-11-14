@@ -33,17 +33,24 @@ class ExternalApiConfigEditor {
     // effect immediately, and when the page is done.
     final api0 = settingConfig.externalApi;
     String tunnelServerAddr = api0.tunnelServerAddr;
-    String tunnelServerPortText = api0.tunnelServerPort.toString();
-    String tunnelRemotePortText = api0.tunnelRemotePort.toString();
+    // Port 0 means "not set" (v1.0.8): the field starts empty and only
+    // shows the grey example hint, never a pre-filled example value.
+    String tunnelServerPortText = api0.tunnelServerPort == 0
+        ? ""
+        : api0.tunnelServerPort.toString();
+    String tunnelRemotePortText = api0.tunnelRemotePort == 0
+        ? ""
+        : api0.tunnelRemotePort.toString();
     String tunnelToken = api0.tunnelToken;
 
     Future<void> syncTunnelFields() async {
       final api = settingConfig.externalApi;
       api.tunnelServerAddr = tunnelServerAddr.trim();
-      api.tunnelServerPort =
-          int.tryParse(tunnelServerPortText.trim()) ?? api.tunnelServerPort;
-      api.tunnelRemotePort =
-          int.tryParse(tunnelRemotePortText.trim()) ?? api.tunnelRemotePort;
+      // Empty (or unparseable) input saves back as 0 = unset, so
+      // clearing a field really un-configures it instead of silently
+      // keeping the previous value.
+      api.tunnelServerPort = int.tryParse(tunnelServerPortText.trim()) ?? 0;
+      api.tunnelRemotePort = int.tryParse(tunnelRemotePortText.trim()) ?? 0;
       api.tunnelToken = tunnelToken.trim();
     }
 
@@ -196,8 +203,9 @@ class ExternalApiConfigEditor {
             name: "说明",
             text:
                 "外部 AI（如电脑上的智能体）可用此地址 + 令牌连接本应用。"
-                "开启外部 AI 后将自动创建外网通道（默认经预置服务器，可改），"
-                "外部也可通过 http://服务器地址:远程端口 访问本机接口（仍需接口令牌）。",
+                "在下面「外网通道」里填上你自己的 frps 服务器并保存后，通道会自动创建，"
+                "外部也可通过 http://服务器地址:远程端口 访问本机接口（仍需接口令牌）；"
+                "通道未配置时仅可使用局域网/本机地址。",
             textWidthPercent: 0.62,
           ),
         ),
@@ -239,7 +247,7 @@ class ExternalApiConfigEditor {
             textFormFieldOptions: GroupItemTextFieldOptions(
               name: "服务器端口",
               text: tunnelServerPortText,
-              hint: "frps 的 bindPort",
+              hint: "例如 7000（frps 的 bindPort）",
               keyboardType: TextInputType.number,
               textWidthPercent: 0.55,
               onChanged: (String value) {
@@ -253,7 +261,7 @@ class ExternalApiConfigEditor {
             textFormFieldOptions: GroupItemTextFieldOptions(
               name: "远程端口",
               text: tunnelRemotePortText,
-              hint: "映射到服务器上的端口",
+              hint: "例如 18777（映射到服务器上的端口）",
               keyboardType: TextInputType.number,
               textWidthPercent: 0.55,
               onChanged: (String value) {
@@ -268,7 +276,7 @@ class ExternalApiConfigEditor {
               name: "通道令牌",
               text: tunnelToken,
               obscureText: true,
-              tips: "与 frps 的 auth.token 一致（当前 ${api.maskedTunnelToken}）。改动在点页面右上角完成或切换开关后生效，通道会自动重连。",
+              tips: "与 frps 的 auth.token 一致（当前 ${api.tunnelToken.isEmpty ? "未设置" : api.maskedTunnelToken}）。改动在点页面右上角完成或切换开关后生效，通道会自动重连。",
               textWidthPercent: 0.55,
               onChanged: (String value) {
                 tunnelToken = value;

@@ -9,10 +9,14 @@
 // External programs then reach the API at http://serverAddr:remotePort,
 // still guarded by the API access token.
 //
-// Lifecycle rules (user decision, v1.0.7):
+// Lifecycle rules (user decision, v1.0.7; server config v1.0.8):
 // - Everything defaults on: API on -> tunnel on.
 // - The tunnel has its own switch, but the API master switch wins:
 //   API off => tunnel stopped, always.
+// - There is no preset server: while no server address is configured
+//   the tunnel stays "unconfigured" and frpc is never started. Once the
+//   user saves an address, the tunnel comes up automatically, and the
+//   native bridge keeps it up (in-frpc retry + supervised restarts).
 // - The tunnel process lives and dies with the app process; if Android
 //   kills the app, the tunnel is down until the app runs again.
 //
@@ -47,7 +51,12 @@ class FrpcTunnelService {
     }
     final config = _config;
     try {
-      if (!config.enable || !config.tunnelEnable) {
+      if (!config.enable ||
+          !config.tunnelEnable ||
+          config.tunnelServerAddr.trim().isEmpty) {
+        // Off, or no server configured yet (v1.0.8): make sure nothing
+        // is running and do not attempt a start — an empty address is
+        // "unconfigured", not a connection failure.
         await _channel.invokeMethod('stop');
         return;
       }
@@ -65,13 +74,18 @@ class FrpcTunnelService {
   }
 
   // Normalised status for the settings UI:
-  //   state: 'disabled'  — the API master switch is off (tunnel stopped)
-  //          'off'       — the tunnel's own switch is off
-  //          'missing'   — frpc is not bundled in this build/arch
-  //          'connected' — frpc logged in AND the proxy started
-  //          'connecting'— frpc process running, not fully up yet
-  //          'failed'    — frpc exited or reported an error (see detail)
-  //          'stopped'   — not running, no error recorded
+  //   state: 'disabled'     — the API master switch is off (tunnel stopped)
+  //          'off'          — the tunnel's own switch is off
+  //          'unconfigured' — no server address saved yet (v1.0.8);
+  //                           frpc is not started and this is NOT an error
+  //          'missing'      — frpc is not bundled in this build/arch
+  //          'connected'    — frpc logged in AND the proxy started
+  //          'connecting'   — frpc process running, not fully up yet
+  //          'reconnecting' — process down, supervisor restart pending
+  //                           or retrying (detail carries the retry count);
+  //                           never a terminal failure
+  //          'failed'       — bridge-level problem (query failed etc.)
+  //          'stopped'      — not running, no error recorded
   //   detail: human-readable summary (never contains the token)
   //   log_tail: last frpc output lines, for diagnosis
   static Future<Map<String, dynamic>> status() async {
@@ -87,6 +101,13 @@ class FrpcTunnelService {
       return {
         'state': 'off',
         'detail': '已关闭',
+        'log_tail': <String>[],
+      };
+    }
+    if (config.tunnelServerAddr.trim().isEmpty) {
+      return {
+        'state': 'unconfigured',
+        'detail': '未配置（请填写你自己的 frps 服务器地址，保存后自动连接）',
         'log_tail': <String>[],
       };
     }
@@ -115,6 +136,13 @@ class FrpcTunnelService {
     final proxyOk = raw['proxy_ok'] == true;
     final lastError = (raw['last_error'] as String?) ?? '';
     final logTail = (raw['log_tail'] as List?)?.cast<String>() ?? <String>[];
+    // Supervision fields from the bridge (v1.0.8): whether it is trying
+    // to keep the tunnel up, how many restarts the current outage has
+    // taken, and whether a restart is counting down right now.
+    final supervisorActive = raw['supervisor_active'] == true;
+    final retryCount = (raw['retry_count'] as num?)?.toInt() ?? 0;
+    final restartPending = raw['restart_pending'] == true;
+    final nextRetrySec = (raw['next_retry_sec'] as num?)?.toInt() ?? 0;
     if (!bundled) {
       return {
         'state': 'missing',
@@ -130,10 +158,33 @@ class FrpcTunnelService {
         'log_tail': logTail,
       };
     }
+    if (supervisorActive && retryCount > 0) {
+      // The tunnel has been up (or tried) and dropped: the bridge is
+      // bringing it back on its own. This is a transient state, never
+      // report it as a terminal failure.
+      final countdown = restartPending && nextRetrySec > 0
+          ? '，${nextRetrySec} 秒后重试'
+          : '';
+      return {
+        'state': 'reconnecting',
+        'detail': '重连中（已重试 $retryCount 次$countdown）',
+        'log_tail': logTail,
+      };
+    }
     if (running) {
       return {
         'state': 'connecting',
         'detail': loginOk ? '已登录服务器，通道建立中…' : '连接中…',
+        'log_tail': logTail,
+      };
+    }
+    if (supervisorActive) {
+      // Wanted but momentarily down with a restart on the way (first
+      // outage, counter not yet bumped): still reconnecting, and any
+      // recorded error is context, not a final verdict.
+      return {
+        'state': 'reconnecting',
+        'detail': lastError.isNotEmpty ? '重连中（上次错误：$lastError）' : '重连中…',
         'log_tail': logTail,
       };
     }

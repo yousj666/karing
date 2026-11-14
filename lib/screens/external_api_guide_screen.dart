@@ -48,14 +48,19 @@ String _buildText(SettingConfigItemExternalApi api, String lanUrl) {
 final token = api.token.isEmpty
 ? '（尚未生成：请先开启「外部 AI 接口」，令牌会自动生成）'
 : api.token;
+final tunnelConfigured = api.tunnelServerAddr.trim().isNotEmpty;
 final publicUrl = 'http://${api.tunnelServerAddr}:${api.tunnelRemotePort}';
+final publicLine = tunnelConfigured
+? '- 公网地址：$publicUrl（经外网通道，通道已连接时可用）'
+: '- 公网地址：外网通道未配置，仅可使用局域网/本机地址';
+final exampleBase = tunnelConfigured ? publicUrl : lanUrl;
 final lanLine = api.allowLan
 ? '- 局域网地址：$lanUrl（与手机同一局域网时用）'
 : '- 局域网地址：未开启（设置里开启「允许局域网访问」后可用）';
 return '''你正在连接我手机上的 Yousj Enhanced（代理应用）的「外部 AI 接口」。通过下面的 HTTP 接口，你可以查看它的状态、管理代理配置，并在授权范围内在手机的 Termux 里执行命令。
 
 （按顺序试能通的那个）
-- 公网地址：$publicUrl（经外网通道，通道已连接时可用）
+$publicLine
 $lanLine
 - 本机地址：http://127.0.0.1:18777（在手机本机上调用时用）
 
@@ -76,8 +81,8 @@ $token
 - GET <地址>/api/v1/logs — 本接口的访问日志（最近 200 条，含来源、路径、状态与令牌校验结果）。
 
 
-curl -H "Authorization: Bearer $token" $publicUrl/api/v1/status
-curl -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{"command":"ls ~","timeout":30}' $publicUrl/api/v1/termux/exec
+curl -H "Authorization: Bearer $token" $exampleBase/api/v1/status
+curl -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{"command":"ls ~","timeout":30}' $exampleBase/api/v1/termux/exec
 
 
 1. 动手之前先调 /api/v1/status 和 /api/v1/termux/status，把当前状态摸清再行动。
