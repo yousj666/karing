@@ -78,6 +78,38 @@ class SettingConfigItemUITailscale {
   }
 }
 
+// yousj-plus: BYOK AI assistant config. Pure client-side feature: requests
+// go only to the endpoint the user fills in below; the API key is stored
+// locally with the rest of the settings and must never be logged.
+class SettingConfigItemAI {
+  String baseUrl = "";
+  String apiKey = "";
+  String model = "";
+
+  Map<String, dynamic> toJson() => {
+    'base_url': baseUrl,
+    'api_key': apiKey,
+    'model': model,
+  };
+  void fromJson(Map<String, dynamic>? map) {
+    if (map == null) {
+      return;
+    }
+
+    baseUrl = map["base_url"] ?? "";
+    apiKey = map["api_key"] ?? "";
+    model = map["model"] ?? "";
+  }
+
+  static SettingConfigItemAI fromJsonStatic(Map<String, dynamic>? map) {
+    SettingConfigItemAI config = SettingConfigItemAI();
+    config.fromJson(map);
+    return config;
+  }
+
+  bool get isConfigured => baseUrl.trim().isNotEmpty && model.trim().isNotEmpty;
+}
+
 class SettingConfigItemAutobackup {
   static const int kMaxCount = 5;
   bool addProfile = true;
@@ -1719,6 +1751,7 @@ class SettingConfig {
   SettingConfigItemAutoSelect autoSelect = SettingConfigItemAutoSelect();
   SettingConfigItemUICloudflareWarp warp = SettingConfigItemUICloudflareWarp();
   SettingConfigItemUITailscale tailscale = SettingConfigItemUITailscale();
+  SettingConfigItemAI ai = SettingConfigItemAI();
   SettingConfigItemWebDev webdav = SettingConfigItemWebDev();
   SettingConfigItemAutobackup autoBackup = SettingConfigItemAutobackup();
   SettingConfigItemStatistics statistics = SettingConfigItemStatistics();
@@ -1775,6 +1808,7 @@ class SettingConfig {
     'auto_select': autoSelect,
     'warp': warp,
     'tailscale': tailscale,
+    'ai': ai,
     'webdav': webdav,
     'auto_backup': autoBackup,
     'statistics': statistics,
@@ -1851,6 +1885,7 @@ class SettingConfig {
     tailscale = SettingConfigItemUITailscale.fromJsonStatic(
       map["tailscale"] ?? map,
     );
+    ai = SettingConfigItemAI.fromJsonStatic(map["ai"]);
     webdav = SettingConfigItemWebDev.fromJsonStatic(map["webdav"]);
     autoBackup = SettingConfigItemAutobackup.fromJsonStatic(map["auto_backup"]);
     statistics = SettingConfigItemStatistics.fromJsonStatic(map["statistics"]);

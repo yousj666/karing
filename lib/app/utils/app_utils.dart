@@ -37,11 +37,11 @@ class AppUtils {
   /// Version baked into the binary at build time. [The release pipeline
   /// injects KARING_BUILD_VERSION derived from pubspec (X.Y.Z+B -> X.Y.Z.B);
   /// the default below is only a safety net for non-CI builds and matches
-  /// pubspec `version: 1.0.3+3` in dotted-quad form.]
+  /// pubspec `version: 1.0.4+4` in dotted-quad form.]
   static String getBuildinVersion() {
     return const String.fromEnvironment(
       'KARING_BUILD_VERSION',
-      defaultValue: '1.0.3.3',
+      defaultValue: '1.0.4.4',
     );
   }
 

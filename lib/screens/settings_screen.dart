@@ -29,6 +29,7 @@ import 'package:karing/app/utils/system_scheme_utils.dart';
 import 'package:karing/app/utils/url_launcher_utils.dart';
 import 'package:karing/i18n/strings.g.dart';
 import 'package:karing/screens/about_screen.dart';
+import 'package:karing/screens/ai_assistant_screen.dart';
 import 'package:karing/screens/dialog_utils.dart';
 import 'package:karing/screens/group_helper.dart';
 import 'package:karing/screens/group_item_creator.dart';
@@ -786,6 +787,40 @@ class _SettingScreenState extends LasyRenderingState<SettingsScreen> {
               name: "Tailscale",
               onPush: () async {
                 onTapTailscale();
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+
+    groupOptions.add(
+      GroupItem(
+        options: [
+          GroupItemOptions(
+            pushOptions: GroupItemPushOptions(
+              name: "AI 助手",
+              onPush: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    settings: AiAssistantScreen.routeSettings(),
+                    builder: (context) => const AiAssistantScreen(),
+                  ),
+                );
+                setState(() {});
+              },
+            ),
+          ),
+          GroupItemOptions(
+            pushOptions: GroupItemPushOptions(
+              name: "AI 助手设置",
+              text: settingConfig.ai.isConfigured
+                  ? settingConfig.ai.model
+                  : "未配置",
+              onPush: () async {
+                await AiAssistantConfigEditor.show(context);
+                setState(() {});
               },
             ),
           ),
