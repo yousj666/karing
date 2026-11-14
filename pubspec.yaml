@@ -1,8 +1,8 @@
 name: karing
-description: karing
+description: "Yousj Enhanced - sing-box client (independent fork; not affiliated with the original project)"
 
 publish_to: none 
-version: 1.2.26+2931
+version: 1.0.0+1
 environment:
   sdk: ">=3.12.2 <4.0.0"
   flutter: ">=3.44.0"
@@ -232,20 +232,6 @@ flutter_launcher_icons: #flutter pub run flutter_launcher_icons
     generate: true
     image_path: logo-round-macos.png
 
-sentry:
-  upload_debug_symbols: false
-  upload_source_maps: false
-  upload_sources: false
-  project:
-  org:
-  auth_token:
-  url:
-  wait_for_processing: false
-  log_level: error # possible values: trace, debug, info, warn, error
-  release:
-  web_build_path:
-  commits: auto
-  ignore_missing: true
 
 parts: #linux flutter_secure_storage
   uet-lms:

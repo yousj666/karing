@@ -82,7 +82,7 @@ class PathUtils {
   /// File name the app executable is expected to have (startup integrity
   /// check in main.dart compares it against the resolved executable).
   static String getExeName() {
-    return Platform.isWindows ? 'karing.exe' : 'karing';
+    return Platform.isWindows ? 'YousjEnhanced.exe' : 'YousjEnhanced';
   }
 
   /// File name of the bundled core service executable

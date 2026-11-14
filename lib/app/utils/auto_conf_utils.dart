@@ -139,7 +139,7 @@ class AutoConfUtils {
       final uas = item.userAgentCompatibles;
       request.headers.set(
         HttpHeaders.userAgentHeader,
-        uas.isNotEmpty ? uas.join(';') : 'Karing',
+        uas.isNotEmpty ? uas.join(';') : 'YousjEnhanced',
       );
       final response = await request.close().timeout(
         const Duration(seconds: 20),

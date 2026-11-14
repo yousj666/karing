@@ -12,9 +12,10 @@
 //                   package (package_info_plus), formatted to match
 //  - getTermsOfServiceUrl() — opened from the about / user-agreement screens
 //
-// NOTE (fork rebrand): these are upstream identity values. Renaming the app
-// to Yousj Enhanced changes this file together with the platform manifests
-// and entitlements — it is intentionally not done inside this reconstruction.
+// NOTE (fork rebrand): this fork ships as "Yousj Enhanced" with application
+// id cc.yousj.enhanced (platform manifests changed in the same step), so it
+// installs side by side with the original app. The Apple app-group id below
+// still uses the upstream group; Apple targets are not built yet.
 
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -22,11 +23,11 @@ class AppUtils {
   AppUtils._();
 
   static String getName() {
-    return 'Karing';
+    return 'Yousj Enhanced';
   }
 
   static String getId() {
-    return 'com.nebula.karing';
+    return 'cc.yousj.enhanced';
   }
 
   static String getGroupId() {

@@ -3172,9 +3172,9 @@ class GroupHelper {
     if (value != 0) {
       late String message;
       if (value < 0) {
-        message = tcontext.appleCoreVersionNotMatch(p: "Karing");
+        message = tcontext.appleCoreVersionNotMatch(p: "Yousj Enhanced");
       } else {
-        message = tcontext.appleCoreVersionNotMatch(p: "AppleTV - Karing");
+        message = tcontext.appleCoreVersionNotMatch(p: "AppleTV - Yousj Enhanced");
       }
 
       DialogUtils.showAlertDialog(context, message);
