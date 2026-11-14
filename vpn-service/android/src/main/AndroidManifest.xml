@@ -1,3 +1,24 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-  package="io.nebula.vpn_service">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- The package attribute is intentionally absent: AGP 8 takes the
+       namespace ('io.nebula.vpn_service') from build.gradle. -->
+
+  <!-- Required to start BoxVpnService as a foreground service. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+  <application>
+    <!-- The VPN service. BIND_VPN_SERVICE restricts binding to the
+         system; SUPPORTS_ALWAYS_ON lets the system Settings UI pin it
+         as the always-on VPN (design doc §3.3). -->
+    <service
+      android:name=".BoxVpnService"
+      android:exported="false"
+      android:permission="android.permission.BIND_VPN_SERVICE">
+      <intent-filter>
+        <action android:name="android.net.VpnService" />
+      </intent-filter>
+      <meta-data
+        android:name="android.net.VpnService.SUPPORTS_ALWAYS_ON"
+        android:value="true" />
+    </service>
+  </application>
 </manifest>
