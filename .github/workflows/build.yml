@@ -1,0 +1,79 @@
+name: Build
+
+# First installable builds of the Yousj Enhanced fork.
+# Android: no signing secrets exist in this repo (gh secret list is
+# empty), so the release APK falls back to debug signing — see the
+# release signingConfig fallback in android/app/build.gradle.kts and
+# the notice written to the run summary. Suitable for test installs
+# alongside the original app (applicationId cc.yousj.enhanced).
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['yousj-v*']
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Unpin Windows-only JDK path
+        # android/gradle.properties pins org.gradle.java.home to a Windows
+        # path for the upstream author's local setup; that path does not
+        # exist on Linux runners and Gradle refuses to start.
+        run: sed -i '/^org.gradle.java.home=/d' android/gradle.properties
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Signing notice
+        if: always()
+        run: |
+          echo "## Android signing" >> "$GITHUB_STEP_SUMMARY"
+          echo "This APK is **debug-signed**: the repo has no signing secrets, so the release build type used the debug-signing fallback added in android/app/build.gradle.kts. Installable for testing; not a store build." >> "$GITHUB_STEP_SUMMARY"
+          ls -la build/app/outputs/flutter-apk/ >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: YousjEnhanced-android
+          path: build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Zip release bundle
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath YousjEnhanced-windows.zip
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: YousjEnhanced-windows
+          path: YousjEnhanced-windows.zip
+          if-no-files-found: error

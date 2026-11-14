@@ -47,16 +47,22 @@ android {
 
     buildTypes {
         val keystore = rootProject.file("./key.properties")
-        val prop = Properties().apply { keystore.inputStream().use(this::load) }
+        // Fork CI has no key.properties (no signing secrets): guard the load
+        // and fall back to debug signing for the release build type below.
+        val prop = Properties().apply {
+            if (keystore.exists()) keystore.inputStream().use(this::load)
+        }
         named("debug") { ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64", "x86") } }
         named("profile") {
-            signingConfig =
-                    signingConfigs.create("profile") {
-                        storeFile = rootProject.file(prop.getProperty("storeFile.release"))
-                        storePassword = prop.getProperty("storePassword.release")
-                        keyAlias = prop.getProperty("keyAlias.release")
-                        keyPassword = prop.getProperty("keyPassword.release")
-                    }
+            if (keystore.exists()) {
+                signingConfig =
+                        signingConfigs.create("profile") {
+                            storeFile = rootProject.file(prop.getProperty("storeFile.release"))
+                            storePassword = prop.getProperty("storePassword.release")
+                            keyAlias = prop.getProperty("keyAlias.release")
+                            keyPassword = prop.getProperty("keyPassword.release")
+                        }
+            }
             ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64", "x86") }
         }
         named("release") {
@@ -70,11 +76,17 @@ android {
             // proguardFiles = getDefaultProguardFile('proguard-android-optimize.txt'),
             // 'proguard-rules.pro'
             signingConfig =
-                    signingConfigs.create("release") {
-                        storeFile = rootProject.file(prop.getProperty("storeFile.release"))
-                        storePassword = prop.getProperty("storePassword.release")
-                        keyAlias = prop.getProperty("keyAlias.release")
-                        keyPassword = prop.getProperty("keyPassword.release")
+                    if (keystore.exists()) {
+                        signingConfigs.create("release") {
+                            storeFile = rootProject.file(prop.getProperty("storeFile.release"))
+                            storePassword = prop.getProperty("storePassword.release")
+                            keyAlias = prop.getProperty("keyAlias.release")
+                            keyPassword = prop.getProperty("keyPassword.release")
+                        }
+                    } else {
+                        // No signing secrets available (fork CI): debug-signed
+                        // release build. Installable for testing only.
+                        signingConfigs.getByName("debug")
                     }
             ndk {
                 abiFilters.clear()
@@ -119,7 +131,9 @@ configurations.configureEach {
 }
 
 val sentryKeystore = rootProject.file("../../private_for_build/karing/karing/android/sign/sentry.properties")
-val sentryProp = Properties().apply { sentryKeystore.inputStream().use(this::load) }
+val sentryProp = Properties().apply {
+    if (sentryKeystore.exists()) sentryKeystore.inputStream().use(this::load)
+}
 ///
 // import io.sentry.android.gradle.extensions.InstrumentationFeature
 
