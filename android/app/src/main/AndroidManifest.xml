@@ -53,12 +53,12 @@
             <data android:scheme="file" />
         </intent>
     </queries>
-    <application android:label="Yousj Enhanced" android:name=".MyApplication"
+    <application android:label="Yousj Enhanced" android:name="com.nebula.karing.MyApplication"
         android:usesCleartextTraffic="true"
         android:banner="@mipmap/ic_tv_banner"
         android:icon="@mipmap/ic_launcher"
         android:extractNativeLibs="true">
-        <activity android:name=".MainActivity" 
+        <activity android:name="com.nebula.karing.MainActivity" 
             android:exported="true" 
             android:launchMode="singleTask" 
             android:theme="@style/LaunchTheme" 
@@ -96,7 +96,7 @@
             </intent-filter>
         </activity>
         <service
-            android:name=".TileService"
+            android:name="com.nebula.karing.TileService"
             android:directBootAware="true"
             android:exported="true"
             android:icon="@drawable/ic_tile"
@@ -111,7 +111,7 @@
                 android:value="true" />
         </service>
         <receiver
-            android:name=".AutomationCommandReceiver"
+            android:name="com.nebula.karing.AutomationCommandReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="com.nebula.karing.action.CONNECT" />
