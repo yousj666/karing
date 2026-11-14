@@ -1731,6 +1731,11 @@ class SettingConfig {
   List<String> chainProxy = [];
   bool front = true;
   bool privateDirect = true;
+  // yousj-plus: when true, SingboxConfigBuilder prepends a route rule per
+  // WireGuard endpoint ({"inbound":[tag],"action":"route","outbound":"direct"})
+  // so server-initiated connections arriving through a WireGuard tunnel land on
+  // local listeners instead of looping back into the tunnel.
+  bool wireguardInboundDirect = false;
   bool quitWhenSwitchSystemUser = false;
   bool alwayOn = false;
   Duration? disconnectAfterSleep;
@@ -1781,6 +1786,7 @@ class SettingConfig {
     'chain_proxy': chainProxy,
     'front': front,
     'private_direct': privateDirect,
+    'wireguard_inbound_direct': wireguardInboundDirect,
     'quit_when_switch_systemUser': quitWhenSwitchSystemUser,
     'alway_on': alwayOn,
     'disconnect_after_sleep_seconds': disconnectAfterSleep?.inSeconds,
@@ -1892,6 +1898,7 @@ class SettingConfig {
     front = map["front"] ?? true;
 
     privateDirect = map["private_direct"] ?? true;
+    wireguardInboundDirect = map["wireguard_inbound_direct"] ?? false;
     quitWhenSwitchSystemUser = map["quit_when_switch_systemUser"] ?? false;
     alwayOn = map["alway_on"] ?? false;
 
