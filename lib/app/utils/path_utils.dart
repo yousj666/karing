@@ -138,6 +138,7 @@ class PathUtils {
   static String storageFileName() => 'storage.json';
   static String statisticsDBFileName() => 'statistics.db';
   static String cacheDBFileName() => 'cache.db';
+  static String localStorageFileName() => 'local_storage.json';
 
   // ---------------------------------------------------------------------------
   // Absolute file paths (profile dir + file name)
@@ -167,6 +168,8 @@ class PathUtils {
       _inProfile(statisticsDBFileName());
   static Future<String> cacheDBFilePath() => _inProfile(cacheDBFileName());
   static Future<String> noticeFilePath() => _inProfile(noticeFileName());
+  static Future<String> localStorageFilePath() =>
+      _inProfile(localStorageFileName());
 
   /// Board/provider configuration file. [RECONSTRUCTION CHOICE name.]
   static Future<String> providersConfigFilePath() =>
