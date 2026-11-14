@@ -323,6 +323,11 @@ class ServerConfigGroupItem {
   List<ProxyConfig> servers = [];
   List<ServerUrltestItem> urltests = [];
 
+  /// Tags with a latency test currently running (mutated in place by
+  /// ServerManager's test scheduler).
+  List<String> testLatency = [];
+  List<String> testLatencyIndepends = [];
+
   SubscriptionTraffic? traffic;
   SubscriptionISP? isp;
 
@@ -384,6 +389,8 @@ class ServerConfigGroupItem {
       ret.servers = servers.map((e) => e.clone()).toList();
     }
     ret.urltests = urltests.map((e) => e.clone()).toList();
+    ret.testLatency = List<String>.from(testLatency);
+    ret.testLatencyIndepends = List<String>.from(testLatencyIndepends);
     ret.traffic = traffic;
     ret.isp = isp;
     ret.proxyFilter = proxyFilter.clone();

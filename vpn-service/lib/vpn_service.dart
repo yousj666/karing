@@ -41,8 +41,12 @@ class FlutterVpnService {
     return '';
   }
 
-  /// Android: keep the app out of the recents screen.
-  static Future<void> setExcludeFromRecents(bool exclude) async {}
+  /// Android: keep the app out of the recents screen. Returns null on
+  /// success, an error message otherwise (settings_screen.dart reads the
+  /// value and shows it in an alert dialog).
+  static Future<String?> setExcludeFromRecents(bool exclude) async {
+    return null;
+  }
 
   /// Whether the privileged helper service (Linux/Windows) is authorized.
   static Future<bool> isServiceAuthorized(String servicePath) async {

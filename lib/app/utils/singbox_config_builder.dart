@@ -61,8 +61,10 @@ class SingboxLogLevel {
 /// [exclude_package] on instances returned by
 /// [SingboxConfigBuilder.inbounds]).
 class SingboxInboundTunOptions {
-  static const String ipv4Address = '172.19.0.1/30';
-  static const String ipv6Address = 'fdfe:dcba:9876::1/126';
+  // Mutable statics, not consts: SettingConfigItemTUN.getAddress()
+  // (setting_manager.dart:667-685) rewrites these from user settings.
+  static String ipv4Address = '172.19.0.1/30';
+  static String ipv6Address = 'fdfe:dcba:9876::1/126';
 
   String tag = 'tun-in';
   List<String> address = [ipv4Address, ipv6Address];
