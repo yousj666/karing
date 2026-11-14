@@ -18,10 +18,10 @@
 //   - WireGuard .conf
 //   - share-link lists (vmess/vless/trojan/ss/hysteria2/tuic), plain or
 //     base64-wrapped
-// Clash YAML is recognised but NOT yet converted (returns an error
-// instead of silently producing zero nodes). Unconvertible entries
-// inside a supported format are skipped and counted in
-// [AutoConfUtils.skippedUnconvertible], never fatal.
+//   - Clash / mihomo YAML (proxies + proxy-groups + rules), plain or
+//     base64-wrapped
+// Unconvertible entries inside a supported format are skipped and
+// counted in [AutoConfUtils.skippedUnconvertible], never fatal.
 //
 // yousj-plus Feature 2: the sing-box JSON branch converts `endpoints[]`
 // entries — a WireGuard endpoint becomes a first-class wireguard
@@ -39,6 +39,7 @@ import 'dart:io';
 
 import 'package:karing/app/runtime/return_result.dart';
 import 'package:vpn_service/state.dart';
+import 'package:yaml/yaml.dart';
 
 /// Outbound types that are structural, not user nodes.
 const Set<String> _pseudoTypes = {'direct', 'block', 'dns'};
@@ -228,11 +229,12 @@ class AutoConfUtils {
     if (content.contains('[Interface]') && content.contains('[Peer]')) {
       return _convertWireguardConf(content, item);
     }
-    if (content.contains('proxies:') && content.contains('proxy-groups:')) {
-      // Recognised, but the clash YAML converter is not part of this
-      // reconstruction phase. Fail loudly instead of yielding zero nodes.
-      return ReturnResultError(
-        'clash yaml conversion not yet reconstructed',
+    if (content.contains('proxies:')) {
+      return _convertClashYaml(
+        content,
+        item,
+        ruleSetItems,
+        diversionGroupItem,
       );
     }
     if (content.contains('://')) {
@@ -927,4 +929,771 @@ ProxyConfig? _ssToProxy(String line, Set<String> usedTags) {
   } catch (_) {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Clash / mihomo YAML
+// ---------------------------------------------------------------------------
+
+/// Transport networks with a sing-box equivalent. A node naming any
+/// other network (xhttp/splithttp, kcp, ...) is skipped and counted.
+const Set<String> _clashNetworks = {
+  'tcp',
+  'ws',
+  'grpc',
+  'h2',
+  'http',
+  'httpupgrade',
+};
+
+ReturnResultError? _convertClashYaml(
+  String content,
+  ServerConfigGroupItem item,
+  List<ServerDiversionGroupRuleSetItem> ruleSetItems,
+  ServerDiversionGroupItem? diversionGroupItem,
+) {
+  dynamic root;
+  try {
+    root = _yamlToPlain(loadYaml(content));
+  } catch (err) {
+    return ReturnResultError('invalid clash yaml: $err');
+  }
+  if (root is! Map<String, dynamic>) {
+    return ReturnResultError('invalid clash yaml: not a mapping');
+  }
+  final proxiesRaw = root['proxies'];
+  if (proxiesRaw is! List || proxiesRaw.isEmpty) {
+    return ReturnResultError('invalid clash yaml: no proxies');
+  }
+
+  final usedTags = <String>{};
+  // Clash display name -> final (uniquified) tag, for group membership,
+  // rule targets and dialer-proxy references.
+  final tagByName = <String, String>{};
+  // Node -> clash name of its dialer-proxy, resolved once every tag is
+  // known (a detour may point at a group declared further down).
+  final pendingDetour = <ProxyConfig, String>{};
+
+  for (final entry in proxiesRaw) {
+    if (entry is! Map) {
+      AutoConfUtils.skippedUnconvertible++;
+      continue;
+    }
+    final e = Map<String, dynamic>.from(entry);
+    final pc = _clashProxyToProxy(e, usedTags);
+    if (pc == null) {
+      AutoConfUtils.skippedUnconvertible++;
+      continue;
+    }
+    final name = _clashStr(e, 'name');
+    if (name.isNotEmpty) {
+      tagByName[name] = pc.tag;
+    }
+    final detour = _clashStr(e, 'dialer-proxy');
+    if (detour.isNotEmpty) {
+      pendingDetour[pc] = detour;
+    }
+    item.servers.add(pc);
+  }
+
+  _convertClashGroups(root['proxy-groups'], item, usedTags, tagByName);
+
+  for (final server in item.servers) {
+    final detourName = pendingDetour[server];
+    if (detourName != null) {
+      final detour = _clashResolveTarget(detourName, tagByName);
+      if (detour != null && detour != server.tag) {
+        server.raw['detour'] = detour;
+      }
+    }
+  }
+  // Groups may carry dialer-proxy too; resolve against final tags.
+  for (final def in _clashGroupDefs(root['proxy-groups'])) {
+    final detourName = _clashStr(def, 'dialer-proxy');
+    if (detourName.isEmpty) continue;
+    final tag = tagByName[_clashStr(def, 'name')];
+    final detour = _clashResolveTarget(detourName, tagByName);
+    if (tag == null || detour == null || detour == tag) continue;
+    for (final server in item.servers) {
+      if (server.tag == tag) {
+        server.raw['detour'] = detour;
+      }
+    }
+  }
+
+  if (diversionGroupItem != null) {
+    _convertClashRules(root['rules'], tagByName, diversionGroupItem);
+  }
+  return null;
+}
+
+List<Map<String, dynamic>> _clashGroupDefs(dynamic groupsRaw) {
+  final defs = <Map<String, dynamic>>[];
+  if (groupsRaw is List) {
+    for (final g in groupsRaw) {
+      if (g is Map) {
+        defs.add(Map<String, dynamic>.from(g));
+      }
+    }
+  }
+  return defs;
+}
+
+void _convertClashGroups(
+  dynamic groupsRaw,
+  ServerConfigGroupItem item,
+  Set<String> usedTags,
+  Map<String, String> tagByName,
+) {
+  final defs = _clashGroupDefs(groupsRaw);
+  // Pass 1: allocate every convertible group's tag up front so a group
+  // may list a group declared later in the file as a member. Groups of
+  // a type with no sing-box form (load-balance / relay / smart) are
+  // counted here and never registered, so references to them fail to
+  // resolve instead of dangling.
+  final plan = <(Map<String, dynamic>, String, String)>[];
+  for (final def in defs) {
+    final name = _clashStr(def, 'name');
+    final type = _clashStr(def, 'type').toLowerCase();
+    final String rawType;
+    switch (type) {
+      case 'select':
+        rawType = 'selector';
+      case 'url-test':
+      case 'fallback':
+        // sing-box has no fallback outbound; urltest (first healthy
+        // member wins) is its closest expressible semantics.
+        rawType = 'urltest';
+      default:
+        rawType = '';
+    }
+    if (name.isEmpty || rawType.isEmpty) {
+      AutoConfUtils.skippedUnconvertible++;
+      continue;
+    }
+    final tag = AutoConfUtils._uniqueTag(name, usedTags);
+    tagByName[name] = tag;
+    plan.add((def, tag, rawType));
+  }
+  // Pass 2: build the group outbounds.
+  for (final (def, tag, rawType) in plan) {
+    final members = <String>[];
+    for (final member in _clashStrList(def, 'proxies')) {
+      final resolved = _clashResolveTarget(member, tagByName);
+      if (resolved != null && !members.contains(resolved)) {
+        members.add(resolved);
+      }
+    }
+    if (members.isEmpty) {
+      // e.g. a group fed only by proxy-providers (`use:`), whose
+      // members are not part of this document.
+      tagByName.remove(_clashStr(def, 'name'));
+      AutoConfUtils.skippedUnconvertible++;
+      continue;
+    }
+    final raw = <String, dynamic>{
+      'type': rawType,
+      'tag': tag,
+      'outbounds': members,
+    };
+    if (rawType == 'selector') {
+      raw['default'] = members.first;
+    } else {
+      final url = _clashStr(def, 'url');
+      raw['url'] = url.isEmpty
+          ? 'http://www.gstatic.com/generate_204'
+          : url;
+      final interval = _clashInt(def, 'interval');
+      if (interval > 0) raw['interval'] = '${interval}s';
+      final tolerance = _clashInt(def, 'tolerance');
+      if (tolerance > 0) raw['tolerance'] = tolerance;
+    }
+    item.servers.add(
+      ProxyConfig()
+        ..type = rawType
+        ..tag = tag
+        ..raw = raw,
+    );
+  }
+}
+
+void _convertClashRules(
+  dynamic rulesRaw,
+  Map<String, String> tagByName,
+  ServerDiversionGroupItem diversionGroupItem,
+) {
+  if (rulesRaw is! List) return;
+  var n = 0;
+  for (final entry in rulesRaw) {
+    n++;
+    final line = entry?.toString().trim() ?? '';
+    if (line.isEmpty) continue;
+    final group = _clashRuleToGroup(line, 'rule-$n', tagByName);
+    if (group == null) {
+      AutoConfUtils.skippedUnconvertible++;
+      continue;
+    }
+    group.groupid = diversionGroupItem.groupid;
+    diversionGroupItem.groups.add(group);
+  }
+}
+
+DiversionRulesGroup? _clashRuleToGroup(
+  String line,
+  String name,
+  Map<String, String> tagByName,
+) {
+  // Logical combinators (AND,((...),(...)),TARGET) nest commas inside
+  // parentheses; a flat split cannot represent them.
+  if (line.contains('((')) return null;
+  final parts = line.split(',').map((p) => p.trim()).toList();
+  if (parts.length < 2) return null;
+  final type = parts[0].toUpperCase();
+  final String arg;
+  final String targetName;
+  if (type == 'MATCH' || type == 'FINAL') {
+    arg = '';
+    targetName = parts[1];
+  } else {
+    if (parts.length < 3) return null;
+    arg = parts[1];
+    targetName = parts[2];
+    // Any further fields are options (no-resolve, ...) and are ignored.
+  }
+  final target = _clashResolveTarget(targetName, tagByName);
+  if (target == null) return null;
+  final group = DiversionRulesGroup()
+    ..name = name
+    ..proxies = [target];
+  switch (type) {
+    case 'DOMAIN':
+      group.domain = [arg];
+    case 'DOMAIN-SUFFIX':
+      group.domainSuffix = [arg];
+    case 'DOMAIN-KEYWORD':
+      group.domainKeyword = [arg];
+    case 'DOMAIN-REGEX':
+      group.domainRegex = [arg];
+    case 'IP-CIDR':
+    case 'IP-CIDR6':
+      group.ipCidr = [arg];
+    case 'GEOIP':
+      group.ruleSetBuildIn = ['geoip:${arg.toLowerCase()}'];
+    case 'GEOSITE':
+      group.ruleSetBuildIn = ['geosite:${arg.toLowerCase()}'];
+    case 'PROCESS-NAME':
+      group.processName = [arg];
+    case 'PROCESS-PATH':
+      group.processPath = [arg];
+    case 'NETWORK':
+      group.network = [arg.toLowerCase()];
+    case 'DST-PORT':
+      if (arg.contains('-')) {
+        group.portRange = [arg];
+      } else {
+        final port = int.tryParse(arg);
+        if (port == null) return null;
+        group.port = [port];
+      }
+    case 'RULE-SET':
+      group.ruleSet = [arg];
+    case 'MATCH':
+    case 'FINAL':
+      // Catch-all: a group with a target and no matchers, exactly what
+      // the JSON converter yields for a matcher-less route rule.
+      break;
+    default:
+      // SRC-IP-CIDR / SRC-PORT / IN-PORT / IP-ASN / DOMAIN-WILDCARD ...
+      // have no field on DiversionRulesGroup.
+      return null;
+  }
+  return group;
+}
+
+/// Clash built-in targets plus the profile's own names.
+String? _clashResolveTarget(String name, Map<String, String> tagByName) {
+  if (name == 'DIRECT') return kProxyDirect;
+  if (name == 'REJECT' || name == 'REJECT-DROP') return kProxyBlock;
+  return tagByName[name];
+}
+
+dynamic _yamlToPlain(dynamic node) {
+  if (node is YamlMap) {
+    final ret = <String, dynamic>{};
+    node.forEach((k, v) => ret[k.toString()] = _yamlToPlain(v));
+    return ret;
+  }
+  if (node is YamlList) {
+    return node.map(_yamlToPlain).toList();
+  }
+  if (node is YamlScalar) return node.value;
+  return node;
+}
+
+String _clashStr(Map<String, dynamic> m, String key) =>
+    m[key]?.toString() ?? '';
+
+int _clashInt(Map<String, dynamic> m, String key) {
+  final v = m[key];
+  if (v is num) return v.toInt();
+  return int.tryParse('${v ?? ''}') ?? 0;
+}
+
+bool _clashBool(Map<String, dynamic> m, String key) {
+  final v = m[key];
+  return v == true || v?.toString() == 'true';
+}
+
+/// Lists arrive as YAML lists; some providers write them comma-joined.
+List<String> _clashStrList(Map<String, dynamic> m, String key) {
+  final v = m[key];
+  if (v is List) return v.map((e) => e.toString()).toList();
+  if (v is String) {
+    return v
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+  }
+  return <String>[];
+}
+
+Map<String, dynamic> _clashMap(Map<String, dynamic> m, String key) {
+  final v = m[key];
+  if (v is Map) return Map<String, dynamic>.from(v);
+  return <String, dynamic>{};
+}
+
+/// Leading number of a mihomo bandwidth string ("30 Mbps" -> 30).
+int _clashMbps(dynamic v) {
+  if (v is num) return v.toInt();
+  final match = RegExp(r'\d+').firstMatch(v?.toString() ?? '');
+  return match == null ? 0 : int.parse(match.group(0)!);
+}
+
+/// Finishes a node whose sing-box [raw] map is already built: allocates
+/// the tag (the clash `name`) and mirrors the scalar fields, exactly
+/// like [_outboundToProxy] does for JSON sources.
+ProxyConfig _clashFinish(
+  Map<String, dynamic> raw,
+  String name,
+  Set<String> usedTags,
+) {
+  final tag = AutoConfUtils._uniqueTag(
+    name.isEmpty ? (raw['type'] ?? 'proxy').toString() : name,
+    usedTags,
+  );
+  raw['tag'] = tag;
+  return ProxyConfig()
+    ..type = (raw['type'] ?? '').toString()
+    ..tag = tag
+    ..server = (raw['server'] ?? '').toString()
+    ..serverport = raw['server_port'] is num
+        ? (raw['server_port'] as num).toInt()
+        : 0
+    ..raw = raw;
+}
+
+/// The sing-box `tls` block shared by the TLS-carrying protocols.
+/// mihomo spells the server name `sni` on some protocols and
+/// `servername` on others; both are honoured.
+Map<String, dynamic> _clashTls(Map<String, dynamic> e) {
+  final tls = <String, dynamic>{'enabled': true};
+  var sni = _clashStr(e, 'sni');
+  if (sni.isEmpty) sni = _clashStr(e, 'servername');
+  if (sni.isNotEmpty) tls['server_name'] = sni;
+  if (_clashBool(e, 'skip-cert-verify')) tls['insecure'] = true;
+  final alpn = _clashStrList(e, 'alpn');
+  if (alpn.isNotEmpty) tls['alpn'] = alpn;
+  final fingerprint = _clashStr(e, 'client-fingerprint');
+  if (fingerprint.isNotEmpty) {
+    tls['utls'] = {'enabled': true, 'fingerprint': fingerprint};
+  }
+  final reality = _clashMap(e, 'reality-opts');
+  if (reality.isNotEmpty) {
+    tls['reality'] = {
+      'enabled': true,
+      if (_clashStr(reality, 'public-key').isNotEmpty)
+        'public_key': _clashStr(reality, 'public-key'),
+      if (_clashStr(reality, 'short-id').isNotEmpty)
+        'short_id': _clashStr(reality, 'short-id'),
+    };
+  }
+  return tls;
+}
+
+/// The sing-box `transport` block for vmess / vless / trojan, or null
+/// for plain tcp. Callers reject networks outside [_clashNetworks]
+/// before calling.
+Map<String, dynamic>? _clashTransport(Map<String, dynamic> e) {
+  final net = _clashStr(e, 'network');
+  switch (net) {
+    case '':
+    case 'tcp':
+      return null;
+    case 'ws':
+      final opts = _clashMap(e, 'ws-opts');
+      final headers = <String, dynamic>{};
+      final rawHeaders = opts['headers'];
+      if (rawHeaders is Map) {
+        rawHeaders.forEach(
+          (k, v) => headers[k.toString()] = v.toString(),
+        );
+      }
+      if (headers.isEmpty && _clashStr(opts, 'host').isNotEmpty) {
+        headers['Host'] = _clashStr(opts, 'host');
+      }
+      return {
+        'type': 'ws',
+        if (_clashStr(opts, 'path').isNotEmpty)
+          'path': _clashStr(opts, 'path'),
+        if (headers.isNotEmpty) 'headers': headers,
+      };
+    case 'httpupgrade':
+      final opts = _clashMap(e, 'ws-opts');
+      return {
+        'type': 'httpupgrade',
+        if (_clashStr(opts, 'path').isNotEmpty)
+          'path': _clashStr(opts, 'path'),
+        if (_clashStr(opts, 'host').isNotEmpty)
+          'host': _clashStr(opts, 'host'),
+      };
+    case 'grpc':
+      final opts = _clashMap(e, 'grpc-opts');
+      return {
+        'type': 'grpc',
+        if (_clashStr(opts, 'grpc-service-name').isNotEmpty)
+          'service_name': _clashStr(opts, 'grpc-service-name'),
+      };
+    case 'h2':
+      final opts = _clashMap(e, 'h2-opts');
+      final hosts = _clashStrList(opts, 'host');
+      return {
+        'type': 'http',
+        if (hosts.isNotEmpty) 'host': hosts,
+        if (_clashStr(opts, 'path').isNotEmpty)
+          'path': _clashStr(opts, 'path'),
+      };
+    case 'http':
+      final opts = _clashMap(e, 'http-opts');
+      final paths = _clashStrList(opts, 'path');
+      final headers = <String, dynamic>{};
+      final rawHeaders = opts['headers'];
+      if (rawHeaders is Map) {
+        rawHeaders.forEach((k, v) {
+          headers[k.toString()] = v is List
+              ? v.map((x) => x.toString()).toList()
+              : v.toString();
+        });
+      }
+      return {
+        'type': 'http',
+        if (paths.isNotEmpty) 'path': paths.first,
+        if (headers.isNotEmpty) 'headers': headers,
+      };
+  }
+  return null;
+}
+
+ProxyConfig? _clashProxyToProxy(
+  Map<String, dynamic> e,
+  Set<String> usedTags,
+) {
+  final type = _clashStr(e, 'type').toLowerCase();
+  final name = _clashStr(e, 'name');
+  final server = _clashStr(e, 'server');
+  final port = _clashInt(e, 'port');
+  final network = _clashStr(e, 'network');
+  final hasNetwork =
+      network.isEmpty || _clashNetworks.contains(network);
+  switch (type) {
+    case 'ss':
+      return _clashSs(e, name, server, port, usedTags);
+    case 'vmess':
+      if (!hasNetwork) return null;
+      final raw = <String, dynamic>{
+        'type': 'vmess',
+        'server': server,
+        'server_port': port,
+        'uuid': _clashStr(e, 'uuid'),
+        'security': _clashStr(e, 'cipher').isEmpty
+            ? 'auto'
+            : _clashStr(e, 'cipher'),
+        'alter_id': _clashInt(e, 'alterId'),
+        if (_clashBool(e, 'global-padding')) 'global_padding': true,
+        if (_clashBool(e, 'authenticated-length'))
+          'authenticated_length': true,
+      };
+      final transport = _clashTransport(e);
+      if (transport != null) raw['transport'] = transport;
+      if (_clashBool(e, 'tls')) raw['tls'] = _clashTls(e);
+      return _clashFinish(raw, name, usedTags);
+    case 'vless':
+      if (!hasNetwork) return null;
+      final raw = <String, dynamic>{
+        'type': 'vless',
+        'server': server,
+        'server_port': port,
+        'uuid': _clashStr(e, 'uuid'),
+        if (_clashStr(e, 'flow').isNotEmpty) 'flow': _clashStr(e, 'flow'),
+      };
+      final transport = _clashTransport(e);
+      if (transport != null) raw['transport'] = transport;
+      if (_clashBool(e, 'tls')) raw['tls'] = _clashTls(e);
+      switch (_clashStr(e, 'packet-encoding')) {
+        case 'xudp':
+          raw['packet_encoding'] = 'xudp';
+        case 'packet':
+          raw['packet_encoding'] = 'packetaddr';
+      }
+      return _clashFinish(raw, name, usedTags);
+    case 'trojan':
+      if (!hasNetwork) return null;
+      final raw = <String, dynamic>{
+        'type': 'trojan',
+        'server': server,
+        'server_port': port,
+        'password': _clashStr(e, 'password'),
+        'tls': _clashTls(e),
+      };
+      final transport = _clashTransport(e);
+      if (transport != null) raw['transport'] = transport;
+      return _clashFinish(raw, name, usedTags);
+    case 'hysteria2':
+      final raw = <String, dynamic>{
+        'type': 'hysteria2',
+        'server': server,
+        'server_port': port,
+        'password': _clashStr(e, 'password'),
+        'tls': _clashTls(e),
+      };
+      final obfs = _clashStr(e, 'obfs');
+      if (obfs.isNotEmpty) {
+        // sing-box hysteria2 only defines the salamander obfuscator.
+        if (obfs != 'salamander') return null;
+        raw['obfs'] = {
+          'type': obfs,
+          if (_clashStr(e, 'obfs-password').isNotEmpty)
+            'password': _clashStr(e, 'obfs-password'),
+        };
+      }
+      final up = _clashMbps(e['up']);
+      if (up > 0) raw['up_mbps'] = up;
+      final down = _clashMbps(e['down']);
+      if (down > 0) raw['down_mbps'] = down;
+      final ports = _clashStrList(e, 'ports');
+      if (ports.isNotEmpty) raw['server_ports'] = ports;
+      if (_clashStr(e, 'hop-interval').isNotEmpty) {
+        raw['hop_interval'] = _clashStr(e, 'hop-interval');
+      }
+      return _clashFinish(raw, name, usedTags);
+    case 'hysteria':
+      final raw = <String, dynamic>{
+        'type': 'hysteria',
+        'server': server,
+        'server_port': port,
+        'tls': _clashTls(e),
+      };
+      final auth = _clashStr(e, 'auth-str').isNotEmpty
+          ? _clashStr(e, 'auth-str')
+          : _clashStr(e, 'auth_str');
+      if (auth.isNotEmpty) raw['auth_str'] = auth;
+      if (_clashStr(e, 'obfs').isNotEmpty) {
+        raw['obfs'] = _clashStr(e, 'obfs');
+      }
+      if (_clashStr(e, 'protocol').isNotEmpty) {
+        raw['protocol'] = _clashStr(e, 'protocol');
+      }
+      final up = _clashMbps(e['up']);
+      if (up > 0) raw['up_mbps'] = up;
+      final down = _clashMbps(e['down']);
+      if (down > 0) raw['down_mbps'] = down;
+      return _clashFinish(raw, name, usedTags);
+    case 'tuic':
+      final tls = _clashTls(e);
+      if (_clashBool(e, 'disable-sni')) tls.remove('server_name');
+      final raw = <String, dynamic>{
+        'type': 'tuic',
+        'server': server,
+        'server_port': port,
+        'uuid': _clashStr(e, 'uuid'),
+        'password': _clashStr(e, 'password'),
+        'tls': tls,
+        if (_clashStr(e, 'congestion-controller').isNotEmpty)
+          'congestion_control': _clashStr(e, 'congestion-controller'),
+        if (_clashStr(e, 'udp-relay-mode').isNotEmpty)
+          'udp_relay_mode': _clashStr(e, 'udp-relay-mode'),
+        if (e.containsKey('zero-rtt-handshake'))
+          'zero_rtt_handshake': _clashBool(e, 'zero-rtt-handshake'),
+        if (_clashStr(e, 'heartbeat').isNotEmpty)
+          'heartbeat': _clashStr(e, 'heartbeat'),
+      };
+      return _clashFinish(raw, name, usedTags);
+    case 'wireguard':
+      return _clashWireguard(e, name, usedTags);
+    case 'socks5':
+      // A TLS-wrapped socks5 has no plain sing-box socks form.
+      if (_clashBool(e, 'tls')) return null;
+      final raw = <String, dynamic>{
+        'type': 'socks',
+        'server': server,
+        'server_port': port,
+        if (_clashStr(e, 'username').isNotEmpty)
+          'username': _clashStr(e, 'username'),
+        if (_clashStr(e, 'password').isNotEmpty)
+          'password': _clashStr(e, 'password'),
+      };
+      return _clashFinish(raw, name, usedTags);
+    case 'http':
+      final raw = <String, dynamic>{
+        'type': 'http',
+        'server': server,
+        'server_port': port,
+        if (_clashStr(e, 'username').isNotEmpty)
+          'username': _clashStr(e, 'username'),
+        if (_clashStr(e, 'password').isNotEmpty)
+          'password': _clashStr(e, 'password'),
+        if (_clashBool(e, 'tls')) 'tls': _clashTls(e),
+      };
+      return _clashFinish(raw, name, usedTags);
+    case 'anytls':
+      final raw = <String, dynamic>{
+        'type': 'anytls',
+        'server': server,
+        'server_port': port,
+        'password': _clashStr(e, 'password'),
+        'tls': _clashTls(e),
+        if (_clashStr(e, 'idle-session-check-interval').isNotEmpty)
+          'idle_session_check_interval':
+              _clashStr(e, 'idle-session-check-interval'),
+        if (_clashStr(e, 'idle-session-timeout').isNotEmpty)
+          'idle_session_timeout': _clashStr(e, 'idle-session-timeout'),
+        if (_clashInt(e, 'min-idle-session') > 0)
+          'min_idle_session': _clashInt(e, 'min-idle-session'),
+      };
+      return _clashFinish(raw, name, usedTags);
+    default:
+      // ssr (removed from sing-box), snell, mieru, ... have no core form.
+      return null;
+  }
+}
+
+ProxyConfig? _clashSs(Map<String, dynamic> e, String name, String server, int port, Set<String> usedTags) {
+  final raw = <String, dynamic>{
+    'type': 'shadowsocks',
+    'server': server,
+    'server_port': port,
+    'method': _clashStr(e, 'cipher'),
+    'password': _clashStr(e, 'password'),
+  };
+  final plugin = _clashStr(e, 'plugin');
+  if (plugin.isNotEmpty) {
+    final mapped = _clashSsPlugin(plugin, e['plugin-opts']);
+    if (mapped == null) return null;
+    raw['plugin'] = mapped.$1;
+    raw['plugin_opts'] = mapped.$2;
+  }
+  if (_clashBool(e, 'udp-over-tcp')) {
+    raw['udp_over_tcp'] = {'enabled': true, 'version': 2};
+  }
+  return _clashFinish(raw, name, usedTags);
+}
+
+/// mihomo ss plugin -> (sing-box plugin name, plugin_opts string), or
+/// null when the plugin has no sing-box equivalent.
+(String, String)? _clashSsPlugin(String plugin, dynamic optsRaw) {
+  final opts = <String, String>{};
+  if (optsRaw is Map) {
+    optsRaw.forEach((k, v) => opts[k.toString()] = v.toString());
+  } else if (optsRaw is String) {
+    for (final part in optsRaw.split(';')) {
+      final kv = part.split('=');
+      if (kv.length == 2) opts[kv[0].trim()] = kv[1].trim();
+    }
+  }
+  String joinOpts(List<String> parts) =>
+      parts.where((p) => p.isNotEmpty).join(';');
+  switch (plugin) {
+    case 'obfs':
+      return (
+        'obfs-local',
+        joinOpts([
+          'obfs=${opts['mode'] ?? 'http'}',
+          if (opts['host'] != null) 'obfs-host=${opts['host']}',
+        ]),
+      );
+    case 'v2ray-plugin':
+      return (
+        'v2ray-plugin',
+        joinOpts([
+          'mode=${opts['mode'] ?? 'websocket'}',
+          if (opts['host'] != null) 'host=${opts['host']}',
+          if (opts['path'] != null) 'path=${opts['path']}',
+          if (opts['tls'] == 'true') 'tls',
+          if (opts['mux'] == 'true') 'mux',
+        ]),
+      );
+    case 'shadow-tls':
+      return (
+        'shadow-tls',
+        joinOpts([
+          if (opts['host'] != null) 'host=${opts['host']}',
+          if (opts['password'] != null) 'password=${opts['password']}',
+          if (opts['version'] != null) 'version=${opts['version']}',
+        ]),
+      );
+  }
+  return null;
+}
+
+/// A mihomo wireguard proxy becomes the same sing-box endpoint shape a
+/// .conf import produces (see [_wireguardEndpointToProxy]); the clash
+/// `name` rides along as the endpoint tag so the node keeps its display
+/// name instead of a synthesised hash.
+ProxyConfig? _clashWireguard(
+  Map<String, dynamic> e,
+  String name,
+  Set<String> usedTags,
+) {
+  final addresses = <String>[];
+  if (_clashStr(e, 'ip').isNotEmpty) addresses.add(_clashStr(e, 'ip'));
+  if (_clashStr(e, 'ipv6').isNotEmpty) {
+    addresses.add(_clashStr(e, 'ipv6'));
+  }
+  final allowedIps = _clashStrList(e, 'allowed-ips');
+  final reserved = <int>[];
+  final reservedRaw = e['reserved'];
+  if (reservedRaw is List) {
+    for (final v in reservedRaw) {
+      final n = v is num ? v.toInt() : int.tryParse('$v');
+      if (n != null) reserved.add(n);
+    }
+  } else if (reservedRaw is String) {
+    for (final part in reservedRaw.split(',')) {
+      final n = int.tryParse(part.trim());
+      if (n != null) reserved.add(n);
+    }
+  }
+  final peer = <String, dynamic>{
+    'address': _clashStr(e, 'server'),
+    'port': _clashInt(e, 'port'),
+    'public_key': _clashStr(e, 'public-key'),
+    if (_clashStr(e, 'pre-shared-key').isNotEmpty)
+      'pre_shared_key': _clashStr(e, 'pre-shared-key'),
+    'allowed_ips': allowedIps.isEmpty
+        ? ['0.0.0.0/0', '::/0']
+        : allowedIps,
+    if (_clashInt(e, 'keepalive') > 0)
+      'persistent_keepalive_interval': _clashInt(e, 'keepalive'),
+    if (reserved.isNotEmpty) 'reserved': reserved,
+  };
+  final endpoint = <String, dynamic>{
+    'type': 'wireguard',
+    'address': addresses,
+    'private_key': _clashStr(e, 'private-key'),
+    if (_clashInt(e, 'mtu') > 0) 'mtu': _clashInt(e, 'mtu'),
+    'peers': [peer],
+  };
+  if (name.isNotEmpty) endpoint['tag'] = name;
+  return _wireguardEndpointToProxy(endpoint, usedTags);
 }
