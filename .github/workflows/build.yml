@@ -30,13 +30,16 @@ jobs:
         # carries AGP 8.11.1 / Kotlin 2.2.20 and the wrapper is Gradle
         # 8.14.3. Latest stable (3.50-era) refuses to build: its Gradle
         # plugin requires Gradle >= 9.3.1, which would force an AGP 9
-        # migration. Within the 3.44 line, 3.44.9 is the last patch and
-        # the first whose Dart (3.12.2) meets the pubspec floor —
-        # 3.44.0 ships Dart 3.12.0 and fails version solving.
+        # migration. Within the 3.44 line, Dart tops out at 3.12.2 and
+        # its pinned meta (1.18.0) cannot satisfy the exact sqlite3
+        # 3.7.0 pin in pubspec.yaml (needs meta ^1.19.0), so version
+        # solving fails there too. 3.47.9 (Dart 3.13.7) is the newest
+        # line whose meta pin fits and whose Gradle floor still
+        # accepts this tree's Gradle 8.14.3 wrapper.
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: '3.44.9'
+          flutter-version: '3.47.9'
           cache: true
 
       - name: Unpin Windows-only JDK path
