@@ -125,7 +125,7 @@ class HttpUtils {
     String? userAgent,
     Duration? timeout,
     Map<String, String>? headers,
-    String? xhwid, {
+    bool? xhwid, {
     bool checkStatuscode = true,
     bool noResponseBody = false,
   }) {
@@ -150,7 +150,7 @@ class HttpUtils {
     String body,
     Duration? timeout,
     String? userAgent,
-    String? xhwid,
+    bool? xhwid,
     bool? followRedirects, {
     bool checkStatuscode = true,
   }) {
