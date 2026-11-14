@@ -99,19 +99,25 @@ class VPNService {
     _currentServer = server;
   }
 
-  static ServerConfigGroupItem getCurrent() {
-    if (_current != null) {
-      return _current!;
-    }
-    final server = _currentServer;
-    if (server != null) {
-      for (final group in ServerManager.getConfig().items) {
-        if (group.groupid == server.groupid) {
-          return _current = group;
-        }
+  /// The currently selected node. Callers keep the selection as a
+  /// ProxyConfig (home_screen.dart's _currentServer, net_check's
+  /// outbound probe, home_tvos passing it into setServer).
+  static ProxyConfig getCurrent() {
+    return _currentServer ?? ServerManager.getUrltest();
+  }
+
+  /// Resolves the group that owns [server] (by groupid), synthesizing a
+  /// single-node group when the node is not part of any profile.
+  static ServerConfigGroupItem _groupOf(ProxyConfig server) {
+    for (final group in ServerManager.getConfig().items) {
+      if (group.groupid == server.groupid) {
+        return group;
       }
     }
-    return _current ??= ServerConfigGroupItem();
+    final group = ServerConfigGroupItem();
+    group.groupid = server.groupid;
+    group.servers = [server];
+    return group;
   }
 
   static void setCurrentServerForUrltest(CurrentServerForUrltest current) {
@@ -147,26 +153,29 @@ class VPNService {
 
   // --- config assembly -----------------------------------------------------
 
-  /// Validates [item], builds its sing-box config through
-  /// [SingboxConfigBuilder] (same pipeline as the profile-share screen)
-  /// and writes the JSON to [savePath]. [secret] is the Clash-API secret
-  /// the core must be started with; the builder's config model has no
-  /// `experimental` slot yet, so threading the secret into the generated
-  /// config lands with the R4 core wiring — the parameter is part of the
-  /// contract and intentionally accepted here.
+  /// Validates [server] (and its owning group), builds the sing-box
+  /// config through [SingboxConfigBuilder] (same pipeline as the
+  /// profile-share screen) and writes the JSON to [savePath]. [secret]
+  /// is the Clash-API secret the core must be started with; the
+  /// builder's config model has no `experimental` slot yet, so threading
+  /// the secret into the generated config lands with the R4 core
+  /// wiring — the parameter is part of the contract and intentionally
+  /// accepted here.
   static Future<ReturnResultError?> setServer(
-    ServerConfigGroupItem item,
+    ProxyConfig server,
     VPNServiceSetServerOptions options,
     SingboxExportType exportType,
     String? host,
     String secret,
     String savePath,
   ) async {
+    final item = _groupOf(server);
     _current = item;
+    _currentServer = server;
     if (!item.enable) {
       return ReturnResultError(options.disabledServerError);
     }
-    if (item.servers.isEmpty) {
+    if (server.tag.isEmpty || server.type.isEmpty) {
       return ReturnResultError(options.invalidServerError);
     }
     final tunMode = SettingManager.getConfig().tun.enable;

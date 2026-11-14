@@ -16,12 +16,22 @@ import 'dart:async';
 /// Runs a per-item async task over a queue of string keys with bounded
 /// parallelism.
 class ParallelTaskQueue {
-  ParallelTaskQueue(this._task, [this.onDone]);
+  ParallelTaskQueue(
+    this._task, [
+    this.onDone,
+    this.parallel = 8,
+    this._reserved,
+  ]);
 
   final Future<String> Function(String url) _task;
 
-  /// Maximum number of tasks in flight at once.
-  int parallel = 8;
+  /// Maximum number of tasks in flight at once (third positional
+  /// constructor argument at the DNS-screen call sites).
+  int parallel;
+
+  /// Reserved fourth positional argument (call sites pass an empty
+  /// list); unused.
+  final dynamic _reserved;
 
   /// Progress callback invoked per task: (url, left, total, start,
   /// finish) — start=true when a task begins, finish=true when the

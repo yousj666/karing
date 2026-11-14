@@ -65,7 +65,7 @@ class HttpUtils {
     int? proxyPort,
     String? userAgent,
     Map<String, String>? headers,
-    String? xhwid,
+    bool? xhwid,
     String? body,
     Duration? timeout, {
     bool checkStatuscode = true,

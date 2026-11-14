@@ -38,7 +38,10 @@ const String kProxyDirect = 'direct';
 const String kProxyBlock = 'block';
 
 /// DNS server tags used by generated configs / DNS rule detection.
+const String kDnsTagResolver = 'dns_resolver';
+const String kDnsTagDirect = 'dns_direct';
 const String kDnsTagProxy = 'dns_proxy';
+const String kDnsTagBlock = 'dns_block';
 const String kDnsTagOutbound = 'dns_outbound';
 
 // ---------------------------------------------------------------------------
@@ -662,12 +665,12 @@ class DiversionRulesGroup {
     return ret;
   }
 
-  Map<String, dynamic> toJson() => {
-    'groupid': groupid,
+  Map<String, dynamic> toJson({bool noGroupId = false}) => {
+    if (!noGroupId) 'groupid': groupid,
     'name': name,
     'or': or,
     'index': index,
-    'groups': groups.map((e) => e.toJson()).toList(),
+    'groups': groups.map((e) => e.toJson(noGroupId: noGroupId)).toList(),
     'proxies': proxies,
     'rule_set_build_in': ruleSetBuildIn,
     'rule_set': ruleSet,

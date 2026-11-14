@@ -122,10 +122,10 @@ class ProcessUtilsMacos {
     if (_iconCache.containsKey(identifier)) {
       return _iconCache[identifier];
     }
+    MacosProcessInfo? match;
     widgets.Image? image;
     try {
       // (match is resolved below; hasIcon flips when an icon is found)
-      MacosProcessInfo? match;
       for (final info in list) {
         if (info.identifier == identifier) {
           match = info;
