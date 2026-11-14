@@ -1,0 +1,35 @@
+name: vpn_service
+description: >-
+  Vendored reconstruction of the vpn_service Flutter plugin for the
+  yousj-plus fork of Karing. The upstream plugin lives in a private repo;
+  this package re-implements its Dart API surface (models + service facade)
+  from the call sites that survive in the app. Native sides are stubs.
+version: 0.12.15
+publish_to: none
+
+environment:
+  sdk: ">=3.12.2 <4.0.0"
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  tuple: 2.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: io.nebula.vpn_service
+        pluginClass: VpnServicePlugin
+      ios:
+        pluginClass: VpnServicePlugin
+      macos:
+        pluginClass: VpnServicePlugin
+      windows:
+        pluginClass: VpnServicePlugin

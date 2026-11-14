@@ -175,7 +175,7 @@ dependency_overrides:
       url: https://github.com/KaringX/move_to_background.git
       ref: 9720fa00946af134caf04b05702230d4329f857f
   vpn_service:
-    path: ../vpn-service/
+    path: ./vpn-service/
     #git:
       #url: https://github.com/KaringX/vpn-service.git
       #ref: main
