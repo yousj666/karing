@@ -1480,8 +1480,12 @@ class _HomeScreenState extends LasyRenderingState<HomeScreen>
     final tcontext = Translations.of(context);
     String savePath = await PathUtils.serviceCoreConfigFilePath();
     VPNServiceSetServerOptions options = VPNServiceSetServerOptions();
-    options.disabledServerError = tcontext.HomeScreen.disabledServer;
-    options.invalidServerError = tcontext.HomeScreen.invalidServer;
+    options.disabledServerError = tcontext.HomeScreen.disabledServer(
+      p: _currentServer.tag,
+    );
+    options.invalidServerError = tcontext.HomeScreen.invalidServer(
+      p: _currentServer.tag,
+    );
     options.expiredServerError = tcontext.HomeScreen.expiredServer;
     ReturnResultError? resultError;
     if (_currentServer.groupid.isEmpty) {
