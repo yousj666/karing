@@ -44,3 +44,15 @@ android {
         minSdk 24
     }
 }
+
+// R4: the sing-box core (gomobile-built libbox.aar from KaringX/sing-box,
+// Java package io.nekohasekai.libbox — see the design doc
+// goals/karing-fork/hidden_files/r4-native-design.md §1.3 and §5 step 1).
+// Drop libbox.aar into android/libs/ and uncomment:
+//
+// dependencies {
+//     implementation files("libs/libbox.aar")
+// }
+//
+// Until then LibboxBridge.kt runs stubbed and starts report
+// "libbox core not built yet (R4-CORE)".
