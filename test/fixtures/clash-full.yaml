@@ -1,0 +1,102 @@
+# Fixture: the remaining protocol families plus the group types that
+# need mapping or skipping (fallback -> urltest, load-balance -> skip),
+# a vmess on an unconvertible network, and ssr/snell (inconvertible).
+proxies:
+  - name: "HY2-01"
+    type: hysteria2
+    server: hy2.example.com
+    port: 443
+    password: "hy2-password"
+    obfs: salamander
+    obfs-password: "obfs-secret"
+    sni: hy2.example.com
+    skip-cert-verify: true
+    up: 30 Mbps
+    down: 100 Mbps
+  - name: "HY1-01"
+    type: hysteria
+    server: hy1.example.com
+    port: 443
+    auth-str: "hy1-auth"
+    obfs: "obfs-string"
+    protocol: udp
+    up: 20
+    down: 50
+    sni: hy1.example.com
+  - name: "TUIC-01"
+    type: tuic
+    server: tuic.example.com
+    port: 443
+    uuid: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+    password: "tuic-password"
+    congestion-controller: bbr
+    udp-relay-mode: native
+    sni: tuic.example.com
+    alpn:
+      - h3
+  - name: "SOCKS-01"
+    type: socks5
+    server: socks.example.com
+    port: 1080
+    username: user1
+    password: pass1
+  - name: "HTTP-01"
+    type: http
+    server: http.example.com
+    port: 8443
+    username: user2
+    password: pass2
+    tls: true
+    sni: http.example.com
+  - name: "VLESS-gRPC"
+    type: vless
+    server: grpc.example.com
+    port: 443
+    uuid: 12345678-1234-1234-1234-123456789012
+    network: grpc
+    grpc-opts:
+      grpc-service-name: gun-service
+    tls: true
+    servername: grpc.example.com
+  - name: "VMess-XHTTP"
+    type: vmess
+    server: xhttp.example.com
+    port: 443
+    uuid: 12345678-1234-1234-1234-123456789013
+    network: xhttp
+  - name: "SSR-Old"
+    type: ssr
+    server: ssr.example.com
+    port: 8388
+    cipher: aes-256-cfb
+    password: "ssr-password"
+    protocol: auth_aes128_md5
+    obfs: tls1.2_ticket_auth
+  - name: "Snell-Old"
+    type: snell
+    server: snell.example.com
+    port: 44046
+    psk: "snell-psk"
+proxy-groups:
+  - name: "Fallback"
+    type: fallback
+    proxies:
+      - HY2-01
+      - TUIC-01
+    url: http://www.gstatic.com/generate_204
+    interval: 180
+  - name: "Balance"
+    type: load-balance
+    proxies:
+      - SOCKS-01
+      - HTTP-01
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+  - name: "Pick"
+    type: select
+    proxies:
+      - Fallback
+      - VLESS-gRPC
+rules:
+  - DOMAIN-SUFFIX,example.org,Pick
+  - MATCH,Fallback

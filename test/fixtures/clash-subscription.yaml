@@ -1,0 +1,9 @@
+# Fixture: subscription-style YAML as providers serve it — a proxies:
+# block with no rules section at all (some omit proxy-groups: too, but
+# most keep a single select group; conversion must not depend on rules).
+mixed-port: 7890
+proxies:
+  - {name: "Sub-SS", type: ss, server: sub.example.com, port: 10001, cipher: aes-128-gcm, password: "sub-pass"}
+  - {name: "Sub-Trojan", type: trojan, server: sub2.example.com, port: 443, password: "sub-trojan", sni: sub2.example.com}
+proxy-groups:
+  - {name: "Sub-Select", type: select, proxies: ["Sub-SS", "Sub-Trojan", DIRECT]}

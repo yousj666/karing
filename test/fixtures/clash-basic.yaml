@@ -1,0 +1,96 @@
+# Fixture: mainstream clash config — ss (plain + obfs plugin), vmess over
+# ws+tls, vless with reality, trojan, wireguard, a select group nesting a
+# url-test group, and a rule list exercising the mapped rule types.
+proxies:
+  - name: "SS-Plain"
+    type: ss
+    server: ss.example.com
+    port: 8388
+    cipher: aes-256-gcm
+    password: "ss-password"
+    udp: true
+  - name: "SS-Obfs"
+    type: ss
+    server: obfs.example.com
+    port: 443
+    cipher: chacha20-ietf-poly1305
+    password: "obfs-password"
+    plugin: obfs
+    plugin-opts:
+      mode: tls
+      host: cdn.example.com
+  - name: "VMess-WS"
+    type: vmess
+    server: vmess.example.com
+    port: 443
+    uuid: 11111111-2222-3333-4444-555555555555
+    alterId: 0
+    cipher: auto
+    tls: true
+    servername: vmess.example.com
+    skip-cert-verify: true
+    network: ws
+    ws-opts:
+      path: /ray
+      headers:
+        Host: vmess.example.com
+  - name: "VLESS-Reality"
+    type: vless
+    server: vless.example.com
+    port: 443
+    uuid: 66666666-7777-8888-9999-000000000000
+    flow: xtls-rprx-vision
+    tls: true
+    servername: www.microsoft.com
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: PUBLICKEYBASE64
+      short-id: abcd1234
+  - name: "Trojan-01"
+    type: trojan
+    server: trojan.example.com
+    port: 443
+    password: "trojan-password"
+    sni: trojan.example.com
+    skip-cert-verify: false
+  - name: "WG-Home"
+    type: wireguard
+    server: 120.48.25.99
+    port: 51820
+    private-key: "PRIVATEKEYBASE64="
+    public-key: "PUBLICKEYBASE64="
+    ip: 10.66.0.3
+    allowed-ips:
+      - 10.66.0.0/24
+    keepalive: 25
+    mtu: 1280
+    udp: true
+proxy-groups:
+  - name: "Auto"
+    type: url-test
+    proxies:
+      - SS-Plain
+      - VMess-WS
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 50
+  - name: "Main"
+    type: select
+    proxies:
+      - Auto
+      - VLESS-Reality
+      - Trojan-01
+      - WG-Home
+      - DIRECT
+rules:
+  - DOMAIN-SUFFIX,google.com,Main
+  - DOMAIN-KEYWORD,github,Main
+  - DOMAIN,www.example.com,SS-Plain
+  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+  - GEOIP,CN,DIRECT
+  - GEOSITE,category-ads-all,REJECT
+  - DST-PORT,853,Main
+  - PROCESS-NAME,Telegram,Main
+  - RULE-SET,myprovider,Auto
+  - SRC-IP-CIDR,10.0.0.0/8,DIRECT
+  - MATCH,Main
