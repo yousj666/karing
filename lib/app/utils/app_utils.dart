@@ -34,13 +34,14 @@ class AppUtils {
     return 'group.com.nebula.karing';
   }
 
-  /// Version baked into the binary at build time. [RECONSTRUCTION CHOICE:
-  /// the release pipeline injects KARING_BUILD_VERSION; the default matches
-  /// pubspec `version: 1.2.26+2931` in dotted-quad form.]
+  /// Version baked into the binary at build time. [The release pipeline
+  /// injects KARING_BUILD_VERSION derived from pubspec (X.Y.Z+B -> X.Y.Z.B);
+  /// the default below is only a safety net for non-CI builds and matches
+  /// pubspec `version: 1.0.3+3` in dotted-quad form.]
   static String getBuildinVersion() {
     return const String.fromEnvironment(
       'KARING_BUILD_VERSION',
-      defaultValue: '1.2.26.2931',
+      defaultValue: '1.0.3.3',
     );
   }
 

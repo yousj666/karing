@@ -42,6 +42,16 @@ jobs:
           flutter-version: '3.47.9'
           cache: true
 
+      - name: Compute build version
+        # AppUtils.getBuildinVersion() reads KARING_BUILD_VERSION at compile
+        # time, and main.dart refuses to start (invalidVersion) unless it
+        # equals the package version in dotted-quad form. Derive it from
+        # pubspec.yaml (X.Y.Z+B -> X.Y.Z.B) so the two can never drift.
+        run: |
+          v=$(grep -E '^version:' pubspec.yaml | head -1 | sed -E 's/^version:[[:space:]]*//; s/\+/./')
+          echo "KARING_BUILD_VERSION=$v" >> "$GITHUB_ENV"
+          echo "Build version: $v"
+
       - name: Unpin Windows-only JDK path
         # android/gradle.properties pins org.gradle.java.home to a Windows
         # path for the upstream author's local setup; that path does not
@@ -49,7 +59,7 @@ jobs:
         run: sed -i '/^org.gradle.java.home=/d' android/gradle.properties
 
       - name: Build release APK
-        run: flutter build apk --release
+        run: flutter build apk --release --dart-define=KARING_BUILD_VERSION=${{ env.KARING_BUILD_VERSION }}
 
       - name: Signing notice
         if: always()
@@ -79,8 +89,18 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Compute build version
+        # Same KARING_BUILD_VERSION plumbing as the android job: derive the
+        # dotted-quad form from pubspec.yaml (X.Y.Z+B -> X.Y.Z.B).
+        shell: pwsh
+        run: |
+          $line = Get-Content pubspec.yaml | Where-Object { $_ -match '^version:' } | Select-Object -First 1
+          $v = ($line -replace '^version:\s*', '') -replace '\+', '.'
+          echo "KARING_BUILD_VERSION=$v" >> $env:GITHUB_ENV
+          Write-Host "Build version: $v"
+
       - name: Build Windows release
-        run: flutter build windows --release
+        run: flutter build windows --release --dart-define=KARING_BUILD_VERSION=${{ env.KARING_BUILD_VERSION }}
 
       - name: Zip release bundle
         shell: pwsh
