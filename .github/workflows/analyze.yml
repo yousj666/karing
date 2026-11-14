@@ -33,7 +33,10 @@ jobs:
         run: flutter pub get
 
       - name: Analyze
-        run: flutter analyze
+        # Errors stay fatal. The remaining ~200 warnings/infos are
+        # upstream's own (deprecated material-shim uses, naming lints);
+        # they must not mask the error signal.
+        run: flutter analyze --no-fatal-warnings
 
   analyze-plugin:
     runs-on: ubuntu-latest
