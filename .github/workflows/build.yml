@@ -79,6 +79,35 @@ jobs:
           echo "${sha256}  ${dest}" | sha256sum -c -
           ls -la "$dest"
 
+      - name: Bundle frpc (pinned)
+        # yousj-plus (v1.0.7): the built-in reverse tunnel runs frpc
+        # (fatedier/frp). The official linux/arm64 release tarball is
+        # downloaded at build time; its SHA-256 below is the value from
+        # the release's own frp_sha256_checksums.txt, re-verified
+        # against the downloaded file (and the extracted frpc binary's
+        # digest is checked as well). The binary is placed as a JNI
+        # library — lib/arm64-v8a/libfrpc.so — because Android 10+ will
+        # not execute binaries extracted into the app's data directory,
+        # while the native library directory stays executable. A
+        # checksum mismatch (or a failed download) fails the build
+        # instead of shipping an unverified binary. Not committed to git.
+        run: |
+          set -euo pipefail
+          version="0.62.1"
+          tarball_sha256="94c98c19ce181f8e09e0d0cb79c278c31e9ec936eb713826a1ddf4995e7c2155"
+          frpc_sha256="3f900ac9b035aac50b117ce5f7c450ca073d3e453448783979e978dc57bc39a9"
+          url="https://github.com/fatedier/frp/releases/download/v${version}/frp_${version}_linux_arm64.tar.gz"
+          work="$(mktemp -d)"
+          curl -fL --retry 3 -o "$work/frp.tar.gz" "$url"
+          echo "${tarball_sha256}  $work/frp.tar.gz" | sha256sum -c -
+          tar --no-same-owner -xzf "$work/frp.tar.gz" -C "$work"
+          dest="android/app/src/main/jniLibs/arm64-v8a/libfrpc.so"
+          mkdir -p "$(dirname "$dest")"
+          cp "$work/frp_${version}_linux_arm64/frpc" "$dest"
+          chmod 755 "$dest"
+          echo "${frpc_sha256}  ${dest}" | sha256sum -c -
+          ls -la "$dest"
+
       - name: Build release APK
         run: flutter build apk --release --dart-define=KARING_BUILD_VERSION=${{ env.KARING_BUILD_VERSION }}
 

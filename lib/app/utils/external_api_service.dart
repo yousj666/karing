@@ -7,9 +7,16 @@
 // built-in AI assistant's BYOK settings.
 //
 // Security model:
-// - Off by default. Started/stopped with the app process per the settings
-//   toggle; toggling in settings applies immediately.
-// - Binds 127.0.0.1 only, unless the user separately enables LAN access.
+// - On by default since v1.0.7 (user decision); started/stopped with the
+//   app process per the settings toggle, and toggling applies
+//   immediately. The user can turn the API (and each extra) off.
+// - Binds 127.0.0.1 only, unless LAN access is enabled (also on by
+//   default since v1.0.7), in which case it binds all interfaces.
+// - While enabled, a bundled frpc reverse tunnel (FrpcTunnelService)
+//   additionally exposes this port through a frps server, so the API is
+//   reachable from the internet; the token check below is the only
+//   guard there too — there is no unauthenticated endpoint besides
+//   health.
 // - Every endpoint except GET /api/v1/health requires the access token:
 //   "Authorization: Bearer <token>" or "X-API-Key: <token>". The token is
 //   read from settings on every request and is never written to logs.
@@ -28,8 +35,10 @@ import 'package:karing/app/modules/setting_manager.dart';
 import 'package:karing/app/runtime/return_result.dart';
 import 'package:karing/app/utils/app_utils.dart';
 import 'package:karing/app/utils/auto_conf_utils.dart';
+import 'package:karing/app/utils/frpc_tunnel_service.dart';
 import 'package:karing/app/utils/http_utils.dart';
 import 'package:karing/app/utils/log.dart';
+import 'package:karing/app/utils/path_utils.dart';
 import 'package:karing/app/utils/termux_bridge.dart';
 import 'package:uuid/uuid.dart';
 // Note: profile/state types (RemoteContent, ProxyFilter, ProxyStrategy,
@@ -62,6 +71,120 @@ class ExternalApiService {
 
   static bool get isRunning => _server != null;
 
+  // --- request log (v1.0.7) -------------------------------------------------
+  //
+  // Every request is recorded: time, source IP, method, path, HTTP
+  // status and whether token auth passed (null for the deliberately
+  // public health endpoint). Termux exec entries additionally carry the
+  // command LENGTH, exit code and duration — never the command text,
+  // and never the token. The log is a ring buffer of the newest
+  // kMaxLogEntries entries, persisted as JSON next to the settings file
+  // so it survives the app being killed and restarted.
+
+  static const int kMaxLogEntries = 200;
+  static const String _logFileName = 'external_api_logs.json';
+  static final List<Map<String, dynamic>> _logs = <Map<String, dynamic>>[];
+  static bool _logsLoaded = false;
+  static Future<void> _logSaveChain = Future<void>.value();
+
+  // Per-request side data (auth verdict, exec details) gathered while a
+  // request is handled and consumed by _recordRequest when the response
+  // is sent. Keyed by the request object itself, so concurrent requests
+  // cannot mix entries up.
+  static final Map<HttpRequest, Map<String, dynamic>> _requestMeta =
+      <HttpRequest, Map<String, dynamic>>{};
+
+  static Future<File?> _logFile() async {
+    final dir = await PathUtils.profileDir();
+    if (dir.isEmpty) {
+      return null;
+    }
+    return File('$dir/$_logFileName');
+  }
+
+  static Future<void> _ensureLogsLoaded() async {
+    if (_logsLoaded) {
+      return;
+    }
+    _logsLoaded = true;
+    try {
+      final file = await _logFile();
+      if (file != null && await file.exists()) {
+        final text = await file.readAsString();
+        if (text.trim().isNotEmpty) {
+          final decoded = jsonDecode(text);
+          if (decoded is List) {
+            for (final entry in decoded) {
+              if (entry is Map<String, dynamic>) {
+                _logs.add(entry);
+              }
+            }
+            if (_logs.length > kMaxLogEntries) {
+              _logs.removeRange(kMaxLogEntries, _logs.length);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      Log.w('ExternalApiService load request log failed: ${err.toString()}');
+    }
+  }
+
+  static void _scheduleLogSave() {
+    // Serialise writes so two requests finishing together cannot
+    // interleave partial JSON into the file.
+    _logSaveChain = _logSaveChain.then((_) async {
+      try {
+        final file = await _logFile();
+        if (file != null) {
+          await file.writeAsString(jsonEncode(_logs), flush: true);
+        }
+      } catch (_) {}
+    });
+  }
+
+  static void _recordRequest(HttpRequest request, int statusCode) {
+    final meta = _requestMeta.remove(request);
+    final entry = <String, dynamic>{
+      'time': DateTime.now().toIso8601String(),
+      'ip': request.connectionInfo?.remoteAddress.address ?? '',
+      'method': request.method,
+      'path': request.uri.path,
+      'status': statusCode,
+      'auth': meta?['auth'],
+    };
+    if (meta != null) {
+      for (final key in const [
+        'cmd_len',
+        'exit_code',
+        'duration_ms',
+        'timed_out',
+      ]) {
+        if (meta.containsKey(key)) {
+          entry[key] = meta[key];
+        }
+      }
+    }
+    _logs.insert(0, entry);
+    if (_logs.length > kMaxLogEntries) {
+      _logs.removeRange(kMaxLogEntries, _logs.length);
+    }
+    _scheduleLogSave();
+  }
+
+  // Newest-first snapshot for the settings log page and GET /api/v1/logs.
+  static Future<List<Map<String, dynamic>>> getLogs() async {
+    await _ensureLogsLoaded();
+    return List<Map<String, dynamic>>.from(_logs);
+  }
+
+  static Future<void> clearLogs() async {
+    await _ensureLogsLoaded();
+    _logs.clear();
+    _scheduleLogSave();
+    await _logSaveChain;
+  }
+
   static SettingConfigItemExternalApi get _config =>
       SettingManager.getConfig().externalApi;
 
@@ -89,8 +212,16 @@ class ExternalApiService {
 
   // Start/stop/restart the server so it matches the current settings.
   // Called from main() after settings load and from the settings UI
-  // whenever a related toggle changes.
+  // whenever a related toggle changes. Also (re)loads the request log
+  // and applies the reverse tunnel, which follows the API's master
+  // switch: API off always stops the tunnel.
   static Future<void> applyFromConfig() async {
+    await _applyHttpServer();
+    await _ensureLogsLoaded();
+    await FrpcTunnelService.applyFromConfig();
+  }
+
+  static Future<void> _applyHttpServer() async {
     final config = _config;
     if (!config.enable) {
       await stop();
@@ -180,6 +311,9 @@ class ExternalApiService {
     );
     response.write(jsonEncode(body));
     await response.close();
+    // Every response funnels through here, so this is the one place the
+    // request log is written.
+    _recordRequest(request, statusCode);
   }
 
   static Future<void> _ok(HttpRequest request, Map<String, dynamic> data) {
@@ -246,6 +380,15 @@ class ExternalApiService {
   static Future<void> _handle(HttpRequest request) async {
     final path = request.uri.path;
     final method = request.method;
+    // Side data for the request log: the token verdict is computed once
+    // here (null = not applicable: the public health endpoint and
+    // non-API paths). _authorized is a pure check, so the routing below
+    // can safely evaluate it again.
+    final meta = <String, dynamic>{};
+    _requestMeta[request] = meta;
+    if (path.startsWith('/api/v1/') && path != '/api/v1/health') {
+      meta['auth'] = _authorized(request);
+    }
     try {
       if (method == 'GET' && path == '/api/v1/health') {
         await _ok(request, {
@@ -303,6 +446,11 @@ class ExternalApiService {
       }
       if (method == 'POST' && path == '/api/v1/termux/exec') {
         await _handleTermuxExec(request);
+        return;
+      }
+      if (method == 'GET' && path == '/api/v1/logs') {
+        await _ensureLogsLoaded();
+        await _ok(request, {'count': _logs.length, 'logs': _logs});
         return;
       }
       await _fail(request, 404, 'not found: $method $path');
@@ -611,6 +759,8 @@ class ExternalApiService {
   }
 
   static Future<void> _handleTermuxExec(HttpRequest request) async {
+    // For the request log's duration field (metadata only).
+    final stopwatch = Stopwatch()..start();
     final gate = _termuxGateError();
     if (gate != null) {
       await _failWithCode(request, 403, 'TERMUX_EXEC_DISABLED', gate);
@@ -640,6 +790,8 @@ class ExternalApiService {
         return;
       }
       final command = commandRaw;
+      // The log records the command's length only, never its text.
+      _requestMeta[request]?['cmd_len'] = command.length;
       if (command.length > kTermuxMaxCommandLength) {
         await _fail(
           request,
@@ -675,6 +827,9 @@ class ExternalApiService {
         // A timeout is a normal execution outcome, reported in the same
         // shape as a completed run rather than as a transport error.
         if (code == 'TIMEOUT') {
+          _requestMeta[request]?['timed_out'] = true;
+          _requestMeta[request]?['duration_ms'] =
+              stopwatch.elapsedMilliseconds;
           await _ok(request, {
             'exit_code': null,
             'stdout': '',
@@ -691,9 +846,13 @@ class ExternalApiService {
           'EXTERNAL_APPS_DISABLED' => 403,
           _ => 500,
         };
+        _requestMeta[request]?['duration_ms'] =
+            stopwatch.elapsedMilliseconds;
         await _failWithCode(request, statusCode, code, message);
         return;
       }
+      _requestMeta[request]?['exit_code'] = result['exit_code'];
+      _requestMeta[request]?['duration_ms'] = stopwatch.elapsedMilliseconds;
       final (stdout, truncatedStdout) = _truncateOutput(
         (result['stdout'] as String?) ?? '',
       );
