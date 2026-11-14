@@ -216,9 +216,9 @@ class VpnServicePlugin :
             "reloadService" -> startOrReload(call.argument<String>("configPath"), result)
             "stopService" -> {
                 val context = appContext
-                if (context != null && BoxVpnService.instance != null) {
-                    val intent = Intent(context, BoxVpnService::class.java)
-                        .setAction(BoxVpnService.ACTION_STOP)
+                if (context != null && VpnServiceImpl.instance != null) {
+                    val intent = Intent(context, VpnServiceImpl::class.java)
+                        .setAction(VpnServiceImpl.ACTION_STOP)
                     context.startService(intent)
                 } else {
                     ServiceStateBus.emit("disconnected")
@@ -263,7 +263,7 @@ class VpnServicePlugin :
             result.success(mapOf("message" to "missing configPath"))
             return
         }
-        if (BoxVpnService.instance != null) {
+        if (VpnServiceImpl.instance != null) {
             // Service (and tun) already up: hot-swap the core config
             // in-process — libbox StartOrReloadService does exactly this,
             // and it blocks until the new instance is up, so answer the
@@ -306,9 +306,9 @@ class VpnServicePlugin :
 
     private fun dispatchStart(configPath: String) {
         val context = appContext ?: return
-        val intent = Intent(context, BoxVpnService::class.java)
-            .setAction(BoxVpnService.ACTION_START)
-            .putExtra(BoxVpnService.EXTRA_CONFIG_PATH, configPath)
+        val intent = Intent(context, VpnServiceImpl::class.java)
+            .setAction(VpnServiceImpl.ACTION_START)
+            .putExtra(VpnServiceImpl.EXTRA_CONFIG_PATH, configPath)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
         } else {

@@ -50,19 +50,19 @@ data class NetworkInterfaceInfo(
  * only the interface and the TunOptions→TunSpec adapter are added
  * (in LibboxBridge).
  *
- * Tun ownership: the tun is created by [BoxVpnService] (the OS-managed
- * VpnService instance, registered in [BoxVpnService.instance]); this class
+ * Tun ownership: the tun is created by [VpnServiceImpl] (the OS-managed
+ * VpnService instance, registered in [VpnServiceImpl.instance]); this class
  * delegates to it.
  */
 class PlatformInterfaceImpl {
 
     /**
      * libbox `OpenTun(options) -> fd`. Delegates to the running
-     * [BoxVpnService]; -1 if the service is not up (core treats it as an
+     * [VpnServiceImpl]; -1 if the service is not up (core treats it as an
      * open failure).
      */
     fun openTun(spec: TunSpec): Int {
-        val service = BoxVpnService.instance ?: return -1
+        val service = VpnServiceImpl.instance ?: return -1
         return service.establishTun(spec)
     }
 
@@ -72,7 +72,7 @@ class PlatformInterfaceImpl {
      * sockets loop back into the tun.
      */
     fun autoDetectInterfaceControl(fd: Int): Boolean {
-        val service = BoxVpnService.instance ?: return false
+        val service = VpnServiceImpl.instance ?: return false
         return service.protectSocket(fd)
     }
 
@@ -160,7 +160,7 @@ class PlatformInterfaceImpl {
     // NEARBY_WIFI_DEVICES at runtime; v1 reports unknown.
     fun readWIFIState(): WifiState? = null
 
-    // TODO(R4-CORE): SendNotification — post via BoxVpnService's
+    // TODO(R4-CORE): SendNotification — post via VpnServiceImpl's
     // notification channel when the core raises user-facing notices.
     fun sendNotification(title: String, body: String) {}
 }

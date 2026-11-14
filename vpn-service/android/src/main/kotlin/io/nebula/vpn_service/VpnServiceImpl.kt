@@ -16,7 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList
  * (design doc §2.1/§2.5): disconnected, connecting, connected,
  * disconnecting, reasserting (Apple only), invalid.
  *
- * [BoxVpnService] emits; [VpnServicePlugin] forwards to the event channel.
+ * [VpnServiceImpl] emits; [VpnServicePlugin] forwards to the event channel.
  */
 object ServiceStateBus {
     @Volatile
@@ -46,7 +46,7 @@ object ServiceStateBus {
 }
 
 /**
- * BoxVpnService — the Android VpnService that owns the tun and hosts the
+ * VpnServiceImpl — the Android VpnService that owns the tun and hosts the
  * sing-box core (via [LibboxBridge]) in-process (design doc §3.1).
  *
  * Lifecycle:
@@ -59,19 +59,40 @@ object ServiceStateBus {
  * [PlatformInterfaceImpl.openTun] / `autoDetectInterfaceControl` can
  * reach the OS-managed object.
  */
-class BoxVpnService : VpnService() {
+class VpnServiceImpl : VpnService() {
 
     companion object {
         const val ACTION_START = "io.nebula.vpn_service.action.START"
         const val ACTION_STOP = "io.nebula.vpn_service.action.STOP"
+
+        // Broadcasts this service emits; the app's QS TileService listens
+        // for all three and re-reads state via getCurrentState().
+        // (ACTION_STOPED keeps the upstream spelling — it is a wire
+        // string shared with the app module's receiver.)
+        const val ACTION_START_RESULT = "io.nebula.vpn_service.action.START_RESULT"
+        const val ACTION_STOPED = "io.nebula.vpn_service.action.STOPED"
+        const val ACTION_STATE = "io.nebula.vpn_service.action.STATE"
+
         const val EXTRA_CONFIG_PATH = "configPath"
+
+        /**
+         * Name of the JSON file in the app's filesDir that carries
+         * service-related settings shared with the app module (the
+         * automation receiver reads `allowed_sender_packages` from it;
+         * the tile checks its existence). Matches the Dart side's
+         * PathUtils.serviceConfigFileName().
+         */
+        const val service_file_name = "service.json"
 
         private const val NOTIFICATION_ID = 1
         private const val NOTIFICATION_CHANNEL_ID = "vpn_service"
 
         @Volatile
-        var instance: BoxVpnService? = null
+        var instance: VpnServiceImpl? = null
             private set
+
+        /** Current lifecycle state, for the app module (QS tile). */
+        fun getCurrentState(): VpnState = VpnState.fromBusName(ServiceStateBus.state)
     }
 
     private val platformInterface = PlatformInterfaceImpl()
@@ -127,7 +148,7 @@ class BoxVpnService : VpnService() {
                 } else {
                     // Always-on restart with no known config: nothing to
                     // run yet; the app will start us properly.
-                    ServiceStateBus.emit("disconnected")
+                    emitState("disconnected")
                 }
                 return START_STICKY
             }
@@ -150,14 +171,21 @@ class BoxVpnService : VpnService() {
 
     // -- core lifecycle -------------------------------------------------
 
+    /** Push a state change to the bus and out to app-module listeners. */
+    private fun emitState(state: String) {
+        ServiceStateBus.emit(state)
+        sendBroadcast(Intent(ACTION_STATE).setPackage(packageName))
+    }
+
     private fun startCore(configPath: String) {
         lastConfigPath = configPath
-        ServiceStateBus.emit("connecting")
+        emitState("connecting")
         val content = try {
             File(configPath).readText()
         } catch (e: Exception) {
             ServiceStateBus.lastError = e.message ?: e.toString()
-            ServiceStateBus.emit("invalid")
+            emitState("invalid")
+            sendBroadcast(Intent(ACTION_START_RESULT).setPackage(packageName))
             return
         }
         if (!LibboxBridge.isSetup) {
@@ -181,18 +209,20 @@ class BoxVpnService : VpnService() {
         val error = LibboxBridge.startOrReloadService(content)
         if (error == null) {
             ServiceStateBus.lastError = null
-            ServiceStateBus.emit("connected")
+            emitState("connected")
         } else {
             ServiceStateBus.lastError = error
-            ServiceStateBus.emit("invalid")
+            emitState("invalid")
         }
+        sendBroadcast(Intent(ACTION_START_RESULT).setPackage(packageName))
     }
 
     private fun stopCore() {
-        ServiceStateBus.emit("disconnecting")
+        emitState("disconnecting")
         LibboxBridge.closeService()
         closeTun()
-        ServiceStateBus.emit("disconnected")
+        emitState("disconnected")
+        sendBroadcast(Intent(ACTION_STOPED).setPackage(packageName))
     }
 
     // -- tun (called back by the core through PlatformInterfaceImpl) ----

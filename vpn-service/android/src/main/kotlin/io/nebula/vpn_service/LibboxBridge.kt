@@ -4,7 +4,7 @@ package io.nebula.vpn_service
  * LibboxBridge — the SOLE touchpoint between this plugin and the sing-box
  * Go core (KaringX/sing-box, package `experimental/libbox`).
  *
- * Everything else in the plugin (VpnServicePlugin, BoxVpnService,
+ * Everything else in the plugin (VpnServicePlugin, VpnServiceImpl,
  * PlatformInterfaceImpl) talks to the core only through this object and
  * through plain Kotlin types, so the plugin compiles and its channel /
  * service plumbing can be exercised before the core exists.
