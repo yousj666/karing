@@ -25,9 +25,15 @@ jobs:
           java-version: '17'
 
       - name: Set up Flutter
+        # Pinned to the toolchain this tree declares: pubspec floor is
+        # Flutter >=3.44.0, settings.gradle.kts carries AGP 8.11.1 /
+        # Kotlin 2.2.20 and the wrapper is Gradle 8.14.3. Latest stable
+        # (3.50-era) refuses to build: its Gradle plugin requires
+        # Gradle >= 9.3.1, which would force an AGP 9 migration.
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.44.0'
           cache: true
 
       - name: Unpin Windows-only JDK path
@@ -54,7 +60,10 @@ jobs:
           if-no-files-found: error
 
   windows:
-    runs-on: windows-latest
+    # VS2022-era image: windows-latest now ships VS 18 / MSVC 14.51,
+    # whose STL hard-errors on <experimental/coroutine> (STL1011) used
+    # by the third-party flutter_inappwebview_windows plugin.
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
 
