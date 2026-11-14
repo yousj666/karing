@@ -28,7 +28,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:karing/app/modules/server_manager.dart';
 import 'package:karing/app/runtime/return_result.dart';
 import 'package:karing/app/utils/convert_utils.dart';
-import 'package:vpn_service/vpn_service.dart'
+import 'package:vpn_service/state.dart'
     show DiversionRulesGroup, ServerDiversionGroupItem;
 
 class DiversionCustomRule {

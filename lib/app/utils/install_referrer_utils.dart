@@ -24,8 +24,8 @@ class InstallReferrerUtils {
   static Future<String> getString() async {
     try {
       if (Platform.isAndroid || Platform.isIOS) {
-        final app = await InstallReferrer.referrer;
-        return app.referrer.name;
+        final referrer = await InstallReferrer.referrer;
+        return referrer.name;
       }
     } catch (_) {}
     return getBuildChannelName();

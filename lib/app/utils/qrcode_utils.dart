@@ -23,7 +23,7 @@ class QrcodeUtils {
   /// Render [content] as a QR PNG (with quiet zone), or null on failure.
   static Uint8List? _encodePng(String content) {
     try {
-      final qr = Encoder.encode(content, ErrorCorrectionLevel.M);
+      final qr = Encoder.encode(content, ErrorCorrectionLevel.m);
       final matrix = qr.matrix;
       if (matrix == null) {
         return null;

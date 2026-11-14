@@ -8,6 +8,10 @@
 //  - readAndDelete(path) -> String? (referenced from home_screen.dart)
 //  - validJsonFile(path) -> bool (my_profiles_screen.dart export check)
 //  - openDirectory(path) (about_screen.dart "open profile dir")
+//  - FileSaver — debounced JSON persistence used by server_manager,
+//    board_provider_manager, auto_update_manager and
+//    remote_config_manager: `FileSaver()`, `setSavePath(path)`,
+//    `await saveAsJson(configObject)` (objects expose toJson()).
 
 import 'dart:convert';
 import 'dart:io';
@@ -141,5 +145,46 @@ class FileUtils {
         await Process.start('xdg-open', [dirPath], mode: ProcessStartMode.detached);
       }
     } catch (_) {}
+  }
+}
+
+/// Debounced JSON file persistence for config objects.
+///
+/// Usage pattern in the managers:
+///   final saver = FileSaver();
+///   saver.setSavePath(await PathUtils.xxxFilePath());
+///   await saver.saveAsJson(config); // config exposes toJson()
+///
+/// Writes are serialized through a future chain so rapid successive
+/// saves cannot interleave or truncate the file.
+class FileSaver {
+  String? _savePath;
+  Future<void> _chain = Future.value();
+
+  void setSavePath(String path) {
+    _savePath = path;
+  }
+
+  String? getSavePath() {
+    return _savePath;
+  }
+
+  Future<void> saveAsJson(dynamic content) {
+    final task = _chain.then((_) async {
+      final target = _savePath;
+      if (target == null || target.isEmpty) {
+        return;
+      }
+      try {
+        final Map<String, dynamic> map = content is Map<String, dynamic>
+            ? content
+            : (content.toJson() as Map<String, dynamic>);
+        final file = File(target);
+        await file.parent.create(recursive: true);
+        await file.writeAsString(jsonEncode(map), flush: true);
+      } catch (_) {}
+    });
+    _chain = task;
+    return task;
   }
 }
