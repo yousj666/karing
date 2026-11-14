@@ -1,0 +1,42 @@
+name: Analyze
+
+# First-pass static analysis for the yousj-plus reconstruction.
+# The tree is known to be incomplete (upstream partial source release);
+# this workflow's job is to produce the true analyzer error list that
+# drives the reconstruction fix queue. It is expected to be RED until
+# the missing layer is fully rebuilt — do not add continue-on-error.
+
+on:
+  push:
+    branches: [yousj-plus]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: App — pub get
+        run: flutter pub get
+
+      - name: App — analyze
+        run: flutter analyze
+
+      - name: Plugin — pub get
+        working-directory: vpn-service
+        run: flutter pub get
+
+      - name: Plugin — analyze
+        working-directory: vpn-service
+        run: flutter analyze
