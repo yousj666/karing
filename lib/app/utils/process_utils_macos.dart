@@ -23,6 +23,10 @@ class MacosProcessInfo {
   String path = '';
   int pid = 0;
 
+  /// Set once an icon has been resolved for this process
+  /// (perapp_macos_screen.dart branches on it).
+  bool hasIcon = false;
+
   Map<String, dynamic> toJson() => {
     'name': name,
     'identifier': identifier,
@@ -120,6 +124,7 @@ class ProcessUtilsMacos {
     }
     widgets.Image? image;
     try {
+      // (match is resolved below; hasIcon flips when an icon is found)
       MacosProcessInfo? match;
       for (final info in list) {
         if (info.identifier == identifier) {
@@ -142,6 +147,9 @@ class ProcessUtilsMacos {
       }
     } catch (_) {
       image = null;
+    }
+    if (image != null && match != null) {
+      match.hasIcon = true;
     }
     _iconCache[identifier] = image;
     return image;

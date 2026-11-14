@@ -133,13 +133,19 @@ class NetworkUtils {
     return v.isEmpty ? null : v;
   }
 
-  /// All interface addresses, non-loopback first.
-  static Future<List<NetInterfacesInfo>> getInterfaces() async {
+  /// All interface addresses, non-loopback first. [filter]=true hides
+  /// loopback/link-local noise (the net-interfaces screen's non-dev
+  /// mode); [addressType] restricts to one address family.
+  static Future<List<NetInterfacesInfo>> getInterfaces({
+    bool filter = false,
+    InternetAddressType? addressType,
+  }) async {
     final result = <NetInterfacesInfo>[];
     try {
       final interfaces = await NetworkInterface.list(
         includeLoopback: true,
         includeLinkLocal: true,
+        type: addressType ?? InternetAddressType.any,
       );
       final loopback = <NetInterfacesInfo>[];
       for (final iface in interfaces) {
@@ -156,7 +162,9 @@ class NetworkUtils {
           }
         }
       }
-      result.addAll(loopback);
+      if (!filter) {
+        result.addAll(loopback);
+      }
     } catch (_) {}
     return result;
   }

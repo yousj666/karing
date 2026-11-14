@@ -205,8 +205,9 @@ class ProxyConfig {
   int serverport = 0;
 
   /// The full sing-box outbound/endpoint JSON this node was parsed from
-  /// (or was edited into). Null for nodes synthesised from scalar fields.
-  Map<String, dynamic>? raw;
+  /// (or was edited into). Empty for nodes synthesised from scalar fields
+  /// (call sites index it unconditionally).
+  Map<String, dynamic> raw = {};
 
   /// Last latency-test result, display form ("" = untested, otherwise a
   /// millisecond count or an error string). Mirrored into raw["latency"].
@@ -226,7 +227,7 @@ class ProxyConfig {
     ret.index = index;
     ret.server = server;
     ret.serverport = serverport;
-    ret.raw = raw == null ? null : Map<String, dynamic>.from(raw!);
+    ret.raw = Map<String, dynamic>.from(raw);
     ret.latency = latency;
     ret.attach = attach;
     ret.outletip = outletip;
@@ -254,7 +255,7 @@ class ProxyConfig {
     'index': index,
     'server': server,
     'serverport': serverport,
-    if (raw != null) 'raw': raw,
+    if (raw.isNotEmpty) 'raw': raw,
     'latency': latency,
     'attach': attach,
     'outlet_ip': outletip,
@@ -270,7 +271,7 @@ class ProxyConfig {
     server = _asString(map['server']);
     serverport = _asInt(map['serverport']);
     final r = map['raw'];
-    raw = r is Map ? Map<String, dynamic>.from(r) : null;
+    raw = r is Map ? Map<String, dynamic>.from(r) : {};
     latency = _asString(map['latency']);
     attach = _asString(map['attach']);
     outletip = _asString(map['outlet_ip']);
@@ -280,22 +281,31 @@ class ProxyConfig {
 
 /// One user-defined urltest collection inside the custom group: nodes are
 /// chosen by explicit [tags] and/or by [regexs] matched against node tags.
-class ServerUrltestItem {
+/// [preProxy] optionally names another urltest collection whose selected
+/// node is used as the chain detour for this collection's tests.
+///
+/// The app refers to this type as both ProxyUrltest (construction sites
+/// in urltest_group_custom_screen.dart) and ServerUrltestItem (field
+/// declarations) — ProxyUrltest is the class, ServerUrltestItem an alias.
+class ProxyUrltest {
   String remark = '';
   List<String> tags = [];
   List<String> regexs = [];
+  String preProxy = '';
 
-  ServerUrltestItem clone() {
-    return ServerUrltestItem()
+  ProxyUrltest clone() {
+    return ProxyUrltest()
       ..remark = remark
       ..tags = List<String>.from(tags)
-      ..regexs = List<String>.from(regexs);
+      ..regexs = List<String>.from(regexs)
+      ..preProxy = preProxy;
   }
 
   Map<String, dynamic> toJson() => {
     'remark': remark,
     'tags': tags,
     'regexs': regexs,
+    'pre_proxy': preProxy,
   };
 
   void fromJson(Map<String, dynamic>? map) {
@@ -303,8 +313,11 @@ class ServerUrltestItem {
     remark = _asString(map['remark']);
     tags = _asStringList(map['tags']);
     regexs = _asStringList(map['regexs']);
+    preProxy = _asString(map['pre_proxy']);
   }
 }
+
+typedef ServerUrltestItem = ProxyUrltest;
 
 // ---------------------------------------------------------------------------
 // ServerConfigGroupItem — one profile (subscription / imported file /
@@ -324,7 +337,7 @@ class ServerConfigGroupItem {
   bool editAble = false;
 
   List<ProxyConfig> servers = [];
-  List<ServerUrltestItem> urltests = [];
+  List<ProxyUrltest> urltests = [];
 
   /// Tags with a latency test currently running (mutated in place by
   /// ServerManager's test scheduler).

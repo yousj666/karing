@@ -598,6 +598,49 @@ class SingboxOutboundMultiplexBrutalOptions {
     options.fromJson(map);
     return options;
   }
+
+  /// Editor rows for the brutal congestion-control options
+  /// (settings_screen.dart passes this tear-off to GroupScreen).
+  Future<List<GroupItem>> getWidgetOptions(
+    BuildContext context,
+    SetStateCallback? setstate,
+  ) async {
+    return [
+      GroupItem(
+        options: [
+          GroupItemOptions(
+            switchOptions: GroupItemSwitchOptions(
+              name: 'enabled',
+              switchValue: enabled ?? false,
+              onSwitch: (value) async {
+                enabled = value;
+              },
+            ),
+          ),
+          GroupItemOptions(
+            textFormFieldOptions: GroupItemTextFieldOptions(
+              name: 'up_mbps',
+              text: upMbps?.toString() ?? '',
+              textWidthPercent: 0.6,
+              onChanged: (String value) {
+                upMbps = int.tryParse(value.trim());
+              },
+            ),
+          ),
+          GroupItemOptions(
+            textFormFieldOptions: GroupItemTextFieldOptions(
+              name: 'down_mbps',
+              text: downMbps?.toString() ?? '',
+              textWidthPercent: 0.6,
+              onChanged: (String value) {
+                downMbps = int.tryParse(value.trim());
+              },
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
 }
 
 /// A urltest outbound as reported by the core (server_select_screen).

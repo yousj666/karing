@@ -24,6 +24,7 @@ import 'package:karing/app/modules/setting_manager.dart';
 import 'package:karing/app/runtime/return_result.dart';
 import 'package:tuple/tuple.dart';
 import 'package:vpn_service/state.dart';
+export 'package:vpn_service/state.dart';
 
 /// Which flavour of config to generate. Only [karing] (the runtime config)
 /// is exercised by the reconstruction's mainline path.

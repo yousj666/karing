@@ -27,8 +27,8 @@ class ProxyConfUtils {
   /// Human-readable byte count with two decimals once past plain bytes
   /// (e.g. `512 B`, `1.50 KB`, `23.42 GB`). Negative input is clamped to 0
   /// (callers subtract direct traffic from totals).
-  static String convertTrafficToStringDouble(int value) {
-    var v = value < 0 ? 0 : value;
+  static String convertTrafficToStringDouble(num value) {
+    var v = value < 0 ? 0 : value.toInt();
     if (v < 1024) {
       return '$v B';
     }
@@ -139,6 +139,17 @@ extension ServerConfigGroupItemApp on ServerConfigGroupItem {
     return servers.length != before;
   }
 
+  /// Short human label of the profile's link type for list rows
+  /// (my_profiles_screen.dart renders it in a badge).
+  String getTypeShort() {
+    return type.name;
+  }
+
+  /// A stable tag for this group (its groupid).
+  String getTag() {
+    return groupid;
+  }
+
   /// The board provider this profile is bound to: by ISP id first, then
   /// by matching the profile's site against provider domains.
   BoardProviderConfig? getBindProvider() {
@@ -158,4 +169,15 @@ extension ServerConfigGroupItemApp on ServerConfigGroupItem {
     }
     return null;
   }
+}
+
+/// One file of a backup zip: its name inside the profile directory and
+/// whether a backup is invalid without it (server_manager.dart's backup
+/// restore reads `.fileName` / `.required` off the entries returned by
+/// BackupAndSyncUtils.getZipFileNameList).
+class BackupZipFileEntry {
+  const BackupZipFileEntry(this.fileName, {this.required = false});
+
+  final String fileName;
+  final bool required;
 }

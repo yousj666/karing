@@ -26,7 +26,9 @@ class PackageInfoImpl extends PackageInfo {
 }
 
 class PackageInfoEx {
-  PackageInfo? info;
+  /// The package's own info object (call sites read `.info.packageName`
+  /// unconditionally; entries are only created for resolved packages).
+  late PackageInfo info;
   String name = '';
   Uint8List? icon;
 }

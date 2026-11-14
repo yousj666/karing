@@ -29,6 +29,10 @@ import 'dart:io';
 
 import 'package:karing/app/runtime/return_result.dart';
 import 'package:karing/app/utils/singbox_dns.dart';
+
+// The DNS screens reach the sing-box tag constants (kOutboundTag*,
+// kDnsTag*) through this library, via the builder's state re-export.
+export 'package:karing/app/utils/singbox_config_builder.dart';
 import 'package:tuple/tuple.dart';
 import 'package:uuid/uuid.dart';
 

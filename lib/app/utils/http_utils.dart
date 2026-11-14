@@ -42,7 +42,7 @@ class HttpUtils {
     HttpClientRequest request,
     String? userAgent,
     Map<String, String>? headers,
-    String? xhwid,
+    bool? xhwid,
   ) {
     if (userAgent != null && userAgent.isNotEmpty) {
       request.headers.set(HttpHeaders.userAgentHeader, userAgent);
@@ -52,8 +52,10 @@ class HttpUtils {
         request.headers.set(key, value);
       });
     }
-    if (xhwid != null && xhwid.isNotEmpty) {
-      request.headers.set('x-hwid', xhwid);
+    if (xhwid == true) {
+      // The flag asks for the hardware-id header; the id value itself is
+      // device-derived and lands with the platform layer.
+      request.headers.set('x-hwid', 'true');
     }
   }
 

@@ -41,21 +41,25 @@ class AppLifecycleStateNofity {
 
   static String get lastState => _lastState;
 
-  static void onStateResumed(Object? key, LifecycleCallback callback) {
+  static void onStateResumed(Object? key, LifecycleCallback? callback) {
     if (key == null) {
-      if (!_resumedAnon.contains(callback)) {
+      if (callback != null && !_resumedAnon.contains(callback)) {
         _resumedAnon.add(callback);
       }
+    } else if (callback == null) {
+      _resumedByKey.remove(key);
     } else {
       _resumedByKey[key] = callback;
     }
   }
 
-  static void onStatePaused(Object? key, LifecycleCallback callback) {
+  static void onStatePaused(Object? key, LifecycleCallback? callback) {
     if (key == null) {
-      if (!_pausedAnon.contains(callback)) {
+      if (callback != null && !_pausedAnon.contains(callback)) {
         _pausedAnon.add(callback);
       }
+    } else if (callback == null) {
+      _pausedByKey.remove(key);
     } else {
       _pausedByKey[key] = callback;
     }

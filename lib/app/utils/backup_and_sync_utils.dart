@@ -12,6 +12,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:karing/app/runtime/return_result.dart';
+import 'package:karing/app/utils/proxy_conf_utils.dart';
 import 'package:karing/app/utils/path_utils.dart';
 
 class BackupAndSyncUtils {
@@ -30,20 +31,20 @@ class BackupAndSyncUtils {
 
   /// Files (relative to the profile dir) that make up a backup archive:
   /// every PathUtils-managed config file name.
-  static List<String> getZipFileNameList() {
+  static List<BackupZipFileEntry> getZipFileNameList() {
     return [
-      PathUtils.subscribeFileName(),
-      PathUtils.subscribeUseFileName(),
-      PathUtils.diversionGroupFileName(),
-      PathUtils.settingFileName(),
-      PathUtils.storageFileName(),
-      PathUtils.serviceConfigFileName(),
-      PathUtils.remoteConfigFileName(),
-      PathUtils.remoteISPConfigFileName(),
-      PathUtils.autoUpdateFileName(),
-      PathUtils.noticeFileName(),
-      PathUtils.ispNoticeFileName(),
-      PathUtils.cloudflareWarpFileName(),
+      BackupZipFileEntry(PathUtils.subscribeFileName(), required: true),
+      BackupZipFileEntry(PathUtils.subscribeUseFileName(), required: false),
+      BackupZipFileEntry(PathUtils.diversionGroupFileName(), required: false),
+      BackupZipFileEntry(PathUtils.settingFileName(), required: true),
+      BackupZipFileEntry(PathUtils.storageFileName(), required: false),
+      BackupZipFileEntry(PathUtils.serviceConfigFileName(), required: true),
+      BackupZipFileEntry(PathUtils.remoteConfigFileName(), required: false),
+      BackupZipFileEntry(PathUtils.remoteISPConfigFileName(), required: false),
+      BackupZipFileEntry(PathUtils.autoUpdateFileName(), required: false),
+      BackupZipFileEntry(PathUtils.noticeFileName(), required: false),
+      BackupZipFileEntry(PathUtils.ispNoticeFileName(), required: false),
+      BackupZipFileEntry(PathUtils.cloudflareWarpFileName(), required: false),
     ];
   }
 

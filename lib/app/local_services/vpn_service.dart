@@ -34,6 +34,7 @@ import 'package:tuple/tuple.dart';
 import 'package:vpn_service/state.dart';
 import 'package:vpn_service/vpn_service.dart';
 
+export 'package:karing/app/utils/singbox_outbound.dart';
 export 'package:vpn_service/state.dart';
 export 'package:vpn_service/vpn_service.dart';
 
@@ -60,6 +61,7 @@ class VPNService {
   onEventStateChanged = [];
 
   static ServerConfigGroupItem? _current;
+  static ProxyConfig? _currentServer;
   static CurrentServerForUrltest? _currentServerForUrltest;
   static FlutterVpnServiceState _state = FlutterVpnServiceState.disconnected;
   static bool _started = false;
@@ -84,17 +86,31 @@ class VPNService {
     // in this reconstruction.
   }
 
-  static Future<void> uninstall() async {
+  static Future<ReturnResultError?> uninstall() async {
     // Helper-service removal is platform work (R4).
+    return null;
   }
 
   // --- current selection ---------------------------------------------------
 
-  static void setCurrent(ServerConfigGroupItem item) {
-    _current = item;
+  /// Records the currently selected node (home_screen.dart keeps its
+  /// selection as a ProxyConfig, not a group).
+  static void setCurrent(ProxyConfig server) {
+    _currentServer = server;
   }
 
   static ServerConfigGroupItem getCurrent() {
+    if (_current != null) {
+      return _current!;
+    }
+    final server = _currentServer;
+    if (server != null) {
+      for (final group in ServerManager.getConfig().items) {
+        if (group.groupid == server.groupid) {
+          return _current = group;
+        }
+      }
+    }
     return _current ??= ServerConfigGroupItem();
   }
 
@@ -107,6 +123,9 @@ class VPNService {
     if (urltest != null && urltest.now.isNotEmpty) {
       return urltest.now;
     }
+    if (_currentServer != null) {
+      return _currentServer!.tag;
+    }
     final item = _current;
     if (item != null && item.servers.isNotEmpty) {
       return item.servers.first.tag;
@@ -115,11 +134,13 @@ class VPNService {
   }
 
   static bool currentIsDirect() {
-    final item = _current;
-    if (item == null || item.servers.isEmpty) {
+    final server = _currentServer ??
+        ((_current != null && _current!.servers.isNotEmpty)
+            ? _current!.servers.first
+            : null);
+    if (server == null) {
       return false;
     }
-    final server = item.servers.first;
     return server.type == kOutboundTypeDirect ||
         server.tag == kOutboundTagDirect;
   }

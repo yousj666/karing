@@ -16,15 +16,18 @@ import 'dart:async';
 /// Runs a per-item async task over a queue of string keys with bounded
 /// parallelism.
 class ParallelTaskQueue {
-  ParallelTaskQueue(this._task, {this.parallel = 8, this.onDone});
+  ParallelTaskQueue(this._task, [this.onDone]);
 
-  final Future<void> Function(String url) _task;
+  final Future<String> Function(String url) _task;
 
   /// Maximum number of tasks in flight at once.
-  final int parallel;
+  int parallel = 8;
 
-  /// Called when the queue drains (not called after cancel()).
-  final void Function()? onDone;
+  /// Progress callback invoked per task: (url, left, total, start,
+  /// finish) — start=true when a task begins, finish=true when the
+  /// queue has fully drained (dns_auto_setup / dns_settings screens).
+  final void Function(String url, int left, int total, bool start, bool finish)?
+  onDone;
 
   final List<String> _pending = [];
   final Set<String> _running = {};
@@ -73,17 +76,30 @@ class ParallelTaskQueue {
     while (_running.length < parallel && _pending.isNotEmpty) {
       final url = _pending.removeAt(0);
       _running.add(url);
+      onDone?.call(
+        url,
+        _pending.length,
+        _finished.length + _running.length + _pending.length,
+        true,
+        false,
+      );
       _task(url)
-          .catchError((_) {})
+          .catchError((_) => '')
           .whenComplete(() {
             _running.remove(url);
             _finished.add(url);
             if (_cancelled) {
               return;
             }
-            if (_pending.isEmpty && _running.isEmpty) {
-              onDone?.call();
-            } else {
+            final drained = _pending.isEmpty && _running.isEmpty;
+            onDone?.call(
+              url,
+              _pending.length,
+              _finished.length + _pending.length,
+              false,
+              drained,
+            );
+            if (!drained) {
               _pump();
             }
           });
