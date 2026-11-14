@@ -110,6 +110,57 @@ class SettingConfigItemAI {
   bool get isConfigured => baseUrl.trim().isNotEmpty && model.trim().isNotEmpty;
 }
 
+// yousj-plus: external AI API. The app can serve a small token-guarded HTTP
+// interface (see ExternalApiService) so external AI programs can connect to
+// it. Off by default; the token is stored locally with the rest of the
+// settings, is only ever sent by the connecting client, and must never be
+// logged.
+class SettingConfigItemExternalApi {
+  bool enable = false;
+  String token = "";
+  bool allowLan = false;
+
+  Map<String, dynamic> toJson() => {
+    'enable': enable,
+    'token': token,
+    'allow_lan': allowLan,
+  };
+  void fromJson(Map<String, dynamic>? map) {
+    if (map == null) {
+      return;
+    }
+
+    enable = map["enable"] ?? false;
+    token = map["token"] ?? "";
+    allowLan = map["allow_lan"] ?? false;
+  }
+
+  static SettingConfigItemExternalApi fromJsonStatic(
+    Map<String, dynamic>? map,
+  ) {
+    SettingConfigItemExternalApi config = SettingConfigItemExternalApi();
+    config.fromJson(map);
+    return config;
+  }
+
+  static String generateToken() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(24, (_) => random.nextInt(256));
+    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  }
+
+  // Display-safe form of the token: only the first/last few characters.
+  String get maskedToken {
+    if (token.isEmpty) {
+      return "";
+    }
+    if (token.length <= 8) {
+      return "********";
+    }
+    return "${token.substring(0, 4)}…${token.substring(token.length - 4)}";
+  }
+}
+
 class SettingConfigItemAutobackup {
   static const int kMaxCount = 5;
   bool addProfile = true;
@@ -1752,6 +1803,7 @@ class SettingConfig {
   SettingConfigItemUICloudflareWarp warp = SettingConfigItemUICloudflareWarp();
   SettingConfigItemUITailscale tailscale = SettingConfigItemUITailscale();
   SettingConfigItemAI ai = SettingConfigItemAI();
+  SettingConfigItemExternalApi externalApi = SettingConfigItemExternalApi();
   SettingConfigItemWebDev webdav = SettingConfigItemWebDev();
   SettingConfigItemAutobackup autoBackup = SettingConfigItemAutobackup();
   SettingConfigItemStatistics statistics = SettingConfigItemStatistics();
@@ -1809,6 +1861,7 @@ class SettingConfig {
     'warp': warp,
     'tailscale': tailscale,
     'ai': ai,
+    'external_api': externalApi,
     'webdav': webdav,
     'auto_backup': autoBackup,
     'statistics': statistics,
@@ -1886,6 +1939,9 @@ class SettingConfig {
       map["tailscale"] ?? map,
     );
     ai = SettingConfigItemAI.fromJsonStatic(map["ai"]);
+    externalApi = SettingConfigItemExternalApi.fromJsonStatic(
+      map["external_api"],
+    );
     webdav = SettingConfigItemWebDev.fromJsonStatic(map["webdav"]);
     autoBackup = SettingConfigItemAutobackup.fromJsonStatic(map["auto_backup"]);
     statistics = SettingConfigItemStatistics.fromJsonStatic(map["statistics"]);
