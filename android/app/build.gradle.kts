@@ -47,14 +47,18 @@ android {
 
     buildTypes {
         val keystore = rootProject.file("./key.properties")
-        // Fork CI has no key.properties (no signing secrets): guard the load
-        // and fall back to debug signing for the release build type below.
+        // The checked-in key.properties points storeFile.release OUTSIDE the
+        // repo (upstream's private_for_build dir), so in the fork's CI the
+        // referenced keystore never exists. Key the signing fallback off
+        // the keystore file itself, not off key.properties existing.
         val prop = Properties().apply {
             if (keystore.exists()) keystore.inputStream().use(this::load)
         }
+        val releaseStoreFile = prop.getProperty("storeFile.release")?.let { rootProject.file(it) }
+        val hasReleaseKey = releaseStoreFile?.exists() == true
         named("debug") { ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64", "x86") } }
         named("profile") {
-            if (keystore.exists()) {
+            if (hasReleaseKey) {
                 signingConfig =
                         signingConfigs.create("profile") {
                             storeFile = rootProject.file(prop.getProperty("storeFile.release"))
@@ -76,7 +80,7 @@ android {
             // proguardFiles = getDefaultProguardFile('proguard-android-optimize.txt'),
             // 'proguard-rules.pro'
             signingConfig =
-                    if (keystore.exists()) {
+                    if (hasReleaseKey) {
                         signingConfigs.create("release") {
                             storeFile = rootProject.file(prop.getProperty("storeFile.release"))
                             storePassword = prop.getProperty("storePassword.release")
