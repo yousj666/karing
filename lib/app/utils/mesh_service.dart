@@ -387,7 +387,7 @@ class MeshService {
       info: utf8.encode('yousj-mesh-psk'),
     );
     final nonce = _randomBytes(12);
-    final box = await ChaCha20.poly1305Aead().encrypt(
+    final box = await Chacha20.poly1305Aead().encrypt(
       psk,
       secretKey: key,
       nonce: nonce,
