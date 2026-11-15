@@ -521,6 +521,8 @@ class HomeWidgetOptions {
   HomeWidgetCard0Options? termux;
   HomeWidgetCard0Options? externalAi;
   HomeWidgetCard0Options? builtinAi;
+  // yousj-plus (v1.1.0): mesh networking entry, same page as 设置 → 组网.
+  HomeWidgetCard0Options? mesh;
 
   final Map<FocusNode?, GlobalKey?> focusToKeys = {};
   HomeWidgetOptions({
@@ -555,6 +557,7 @@ class HomeWidgetOptions {
     this.termux,
     this.externalAi,
     this.builtinAi,
+    this.mesh,
   }) {
     focusToKeys[runtimeInfo?.focusNode] = runtimeInfo?.key;
     focusToKeys[memoryInfo?.focusNode] = memoryInfo?.key;
@@ -588,6 +591,7 @@ class HomeWidgetOptions {
     focusToKeys[termux?.focusNode] = termux?.key;
     focusToKeys[externalAi?.focusNode] = externalAi?.key;
     focusToKeys[builtinAi?.focusNode] = builtinAi?.key;
+    focusToKeys[mesh?.focusNode] = mesh?.key;
   }
 }
 
@@ -1467,6 +1471,33 @@ class BuiltinAiCard extends TextCard0 {
 }
 
 class _BuiltinAiCardState extends TextCard0State<BuiltinAiCard> {}
+
+// yousj-plus (v1.1.0): mesh networking home-grid entry.
+class MeshCard extends TextCard0 {
+  const MeshCard({
+    super.key,
+    super.onPressed,
+    super.onLongPress,
+    super.focusNode,
+  }) : super(icon: Icons.hub_outlined, title: "组网");
+
+  @override
+  State<MeshCard> createState() => _MeshCardState();
+
+  static bool supportedCurrentPlatfrom() {
+    return true;
+  }
+
+  static String id() {
+    return "mesh";
+  }
+
+  static int crossAxisCellCount() {
+    return 4;
+  }
+}
+
+class _MeshCardState extends TextCard0State<MeshCard> {}
 
 class OutboundModeCard extends StatefulWidget {
   const OutboundModeCard({super.key, this.onChanged, this.focusNode});
@@ -2952,6 +2983,20 @@ class HomeWidgets {
         ),
       );
     }
+    if (MeshCard.id() == id &&
+        options.mesh != null &&
+        MeshCard.supportedCurrentPlatfrom()) {
+      return GridItem(
+        crossAxisCellCount: MeshCard.crossAxisCellCount(),
+        id: id,
+        child: MeshCard(
+          key: options.mesh!.key,
+          onPressed: options.mesh!.onPressed,
+          onLongPress: options.mesh!.onLongPress,
+          focusNode: options.mesh!.focusNode,
+        ),
+      );
+    }
 
     return null;
   }
@@ -2964,7 +3009,7 @@ class HomeWidgets {
     // yousj-plus (v1.0.6): layouts saved before v1.0.6 cannot contain the
     // three new fork entries; append any that are missing (in order) so
     // the entries actually show up instead of silently staying absent.
-    for (final id in [TermuxCard.id(), ExternalAiCard.id(), BuiltinAiCard.id()]) {
+    for (final id in [TermuxCard.id(), ExternalAiCard.id(), BuiltinAiCard.id(), MeshCard.id()]) {
       if (!widgetIds.contains(id)) {
         widgetIds.add(id);
       }

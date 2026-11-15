@@ -212,6 +212,42 @@ class SettingConfigItemExternalApi {
   }
 }
 
+// yousj-plus (v1.1.0): self-developed mesh networking (see MeshService).
+// Only UI-level preferences live here; key material and per-network state
+// (PSK, member cache) live in mesh_state.json in the profile directory,
+// never in SettingConfig, so backups/sync cannot leak them. Following the
+// v1.0.8 rule, the coordinator address is NOT preset: it defaults to empty
+// and takes effect once the user fills it in and saves.
+class SettingConfigItemMesh {
+  bool enable = false;
+  String coordinatorUrl = "";
+  String activeNetworkId = "";
+  String deviceName = "";
+
+  Map<String, dynamic> toJson() => {
+    'enable': enable,
+    'coordinator_url': coordinatorUrl,
+    'active_network_id': activeNetworkId,
+    'device_name': deviceName,
+  };
+
+  void fromJson(Map<String, dynamic>? map) {
+    if (map == null) {
+      return;
+    }
+    enable = map["enable"] ?? false;
+    coordinatorUrl = map["coordinator_url"] ?? coordinatorUrl;
+    activeNetworkId = map["active_network_id"] ?? activeNetworkId;
+    deviceName = map["device_name"] ?? deviceName;
+  }
+
+  static SettingConfigItemMesh fromJsonStatic(Map<String, dynamic>? map) {
+    SettingConfigItemMesh config = SettingConfigItemMesh();
+    config.fromJson(map);
+    return config;
+  }
+}
+
 class SettingConfigItemAutobackup {
   static const int kMaxCount = 5;
   bool addProfile = true;
@@ -1855,6 +1891,7 @@ class SettingConfig {
   SettingConfigItemUITailscale tailscale = SettingConfigItemUITailscale();
   SettingConfigItemAI ai = SettingConfigItemAI();
   SettingConfigItemExternalApi externalApi = SettingConfigItemExternalApi();
+  SettingConfigItemMesh mesh = SettingConfigItemMesh();
   SettingConfigItemWebDev webdav = SettingConfigItemWebDev();
   SettingConfigItemAutobackup autoBackup = SettingConfigItemAutobackup();
   SettingConfigItemStatistics statistics = SettingConfigItemStatistics();
@@ -1913,6 +1950,7 @@ class SettingConfig {
     'tailscale': tailscale,
     'ai': ai,
     'external_api': externalApi,
+    'mesh': mesh,
     'webdav': webdav,
     'auto_backup': autoBackup,
     'statistics': statistics,
@@ -1993,6 +2031,7 @@ class SettingConfig {
     externalApi = SettingConfigItemExternalApi.fromJsonStatic(
       map["external_api"],
     );
+    mesh = SettingConfigItemMesh.fromJsonStatic(map["mesh"]);
     webdav = SettingConfigItemWebDev.fromJsonStatic(map["webdav"]);
     autoBackup = SettingConfigItemAutobackup.fromJsonStatic(map["auto_backup"]);
     statistics = SettingConfigItemStatistics.fromJsonStatic(map["statistics"]);

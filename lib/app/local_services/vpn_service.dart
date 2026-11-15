@@ -27,6 +27,7 @@ import 'package:karing/app/modules/server_manager.dart';
 import 'package:karing/app/modules/setting_manager.dart';
 import 'package:karing/app/runtime/return_result.dart';
 import 'package:karing/app/utils/clash_api.dart';
+import 'package:karing/app/utils/mesh_service.dart';
 import 'package:karing/app/utils/ruleset_codes_utils.dart';
 import 'package:karing/app/utils/singbox_config_builder.dart';
 import 'package:karing/app/utils/singbox_outbound.dart';
@@ -222,6 +223,14 @@ class VPNService {
     }
     config.outbounds = outbounds.data!;
     config.endpoints = SingboxConfigBuilder.endpoints(config.outbounds);
+    // yousj-plus (v1.1.0): inject the self-developed mesh WireGuard
+    // endpoint (hub peer generated from the coordinator's member list by
+    // MeshService) plus a route rule for the mesh subnet. The endpoint is
+    // configuration only until the sing-box core (libbox) is wired up.
+    final meshEndpoint = await MeshService.buildEndpointJson();
+    if (meshEndpoint != null) {
+      config.endpoints = [...config.endpoints, meshEndpoint];
+    }
     config.route = SingboxConfigBuilder.route(
       '',
       '',
@@ -243,6 +252,15 @@ class VPNService {
       item.groupid,
       exportType,
     );
+    if (meshEndpoint != null && config.route is Map) {
+      final rules = (config.route as Map)['rules'];
+      if (rules is List) {
+        rules.insert(0, {
+          'ip_cidr': ['10.99.0.0/24'],
+          'outbound': meshEndpoint['tag'],
+        });
+      }
+    }
 
     try {
       await File(

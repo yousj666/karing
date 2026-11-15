@@ -17,6 +17,7 @@ import 'package:karing/app/private/sentry_utils_private.dart';
 import 'package:karing/app/utils/app_utils.dart';
 import 'package:karing/app/utils/device_utils.dart';
 import 'package:karing/app/utils/external_api_service.dart';
+import 'package:karing/app/utils/mesh_service.dart';
 import 'package:karing/app/utils/http_overrides_utils.dart';
 //import 'package:karing/app/utils/geoip_subnet_utils.dart';
 //import 'package:karing/app/utils/file_utils.dart';
@@ -52,6 +53,8 @@ void main(List<String> args) async {
   // yousj-plus: start the external AI API if the user enabled it. It lives
   // and dies with the app process and re-applies itself on settings changes.
   unawaited(ExternalApiService.applyFromConfig());
+  // yousj-plus (v1.1.0): mesh control-plane heartbeat, if enabled.
+  MeshService.applyFromConfig();
   await BoardProviderManager.init();
   if (!SettingManager.getConfig().disableAppImproveData) {
     await SentryUtilsPrivate.init(SettingConfig.kMaxDays.inDays);

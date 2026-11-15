@@ -31,6 +31,7 @@ import 'package:karing/i18n/strings.g.dart';
 import 'package:karing/screens/about_screen.dart';
 import 'package:karing/screens/ai_assistant_screen.dart';
 import 'package:karing/screens/external_api_screen.dart';
+import 'package:karing/screens/mesh_screen.dart';
 import 'package:karing/screens/dialog_utils.dart';
 import 'package:karing/screens/group_helper.dart';
 import 'package:karing/screens/group_item_creator.dart';
@@ -838,6 +839,23 @@ class _SettingScreenState extends LasyRenderingState<SettingsScreen> {
               text: settingConfig.externalApi.enable ? "已开启" : "已关闭",
               onPush: () async {
                 await ExternalApiConfigEditor.show(context);
+                setState(() {});
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+
+    groupOptions.add(
+      GroupItem(
+        options: [
+          GroupItemOptions(
+            pushOptions: GroupItemPushOptions(
+              name: "组网",
+              text: settingConfig.mesh.enable ? "已开启" : "已关闭",
+              onPush: () async {
+                await MeshConfigEditor.show(context);
                 setState(() {});
               },
             ),

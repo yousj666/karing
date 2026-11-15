@@ -56,6 +56,7 @@ import 'package:karing/i18n/strings.g.dart';
 import 'package:karing/screens/accessibility_screen.dart';
 import 'package:karing/screens/ai_assistant_screen.dart';
 import 'package:karing/screens/external_api_screen.dart';
+import 'package:karing/screens/mesh_screen.dart';
 import 'package:ant_icons_plus/ant_icons_plus.dart';
 import 'package:karing/screens/common_dialog.dart';
 import 'package:karing/screens/dialog_utils.dart';
@@ -230,6 +231,9 @@ class _HomeScreenState extends LasyRenderingState<HomeScreen>
   final FocusNode _focusNodeBuiltinAi = FocusNode(
     debugLabel: "scroll.${BuiltinAiCard.id()}",
   );
+  final FocusNode _focusNodeMesh = FocusNode(
+    debugLabel: "scroll.${MeshCard.id()}",
+  );
 
   final _scrollController = ScrollController();
   bool _agreementApproved = false;
@@ -388,6 +392,11 @@ class _HomeScreenState extends LasyRenderingState<HomeScreen>
         onTapBuiltinAi,
         null,
         _focusNodeBuiltinAi,
+      ),
+      mesh: HomeWidgetCard0Options(
+        onTapMesh,
+        null,
+        _focusNodeMesh,
       ),
     );
 
@@ -1817,6 +1826,13 @@ class _HomeScreenState extends LasyRenderingState<HomeScreen>
       ),
     );
     await checkAndReload("onTapBuiltinAi");
+    setState(() {});
+  }
+
+  // yousj-plus (v1.1.0): same page as 设置 → 组网.
+  void onTapMesh() async {
+    await MeshConfigEditor.show(context);
+    await checkAndReload("onTapMesh");
     setState(() {});
   }
 
