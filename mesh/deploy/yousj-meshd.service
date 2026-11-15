@@ -1,0 +1,18 @@
+[Unit]
+Description=Yousj Mesh coordination service (yousj-meshd)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/yousj-meshd -config /etc/yousj-mesh/meshd.json
+WorkingDirectory=/var/lib/yousj-mesh
+StateDirectory=yousj-mesh
+Restart=on-failure
+RestartSec=3
+# meshd only handles the control plane; keep its privileges minimal.
+DynamicUser=no
+User=root
+
+[Install]
+WantedBy=multi-user.target

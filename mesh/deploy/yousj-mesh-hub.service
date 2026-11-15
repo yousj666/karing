@@ -1,0 +1,17 @@
+[Unit]
+Description=Yousj Mesh relay hub (wireguard-go)
+After=network-online.target yousj-meshd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/yousj-mesh/hub.env
+ExecStart=/usr/local/bin/yousj-mesh-hub -meshd ${MESHD_URL} -privkey-file /etc/yousj-mesh/hub.key -port ${HUB_PORT} -iface meshhub0 -insecure
+Restart=on-failure
+RestartSec=3
+# The hub needs to create a TUN device and toggle forwarding rules.
+AmbientCapabilities=CAP_NET_ADMIN
+User=root
+
+[Install]
+WantedBy=multi-user.target
